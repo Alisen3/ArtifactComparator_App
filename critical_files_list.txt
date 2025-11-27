@@ -1,0 +1,45 @@
+# BACKEND ENTITIES (store_artifacts için kritik!)
+backend/src/main/java/com/halenteck/demo/entity/ArtifactEntity.java
+backend/src/main/java/com/halenteck/demo/entity/ComparisonTaskEntity.java
+backend/src/main/java/com/halenteck/demo/entity/StudyEntity.java
+backend/src/main/java/com/halenteck/demo/entity/UserEntity.java
+
+# BACKEND CONTROLLERS (Debug logging ile!)
+backend/src/main/java/com/halenteck/demo/controller/StudyController.java
+backend/src/main/java/com/halenteck/demo/controller/ArtifactController.java
+backend/src/main/java/com/halenteck/demo/controller/UserController.java
+backend/src/main/java/com/halenteck/demo/controller/TaskController.java
+
+# BACKEND DTOs
+backend/src/main/java/com/halenteck/demo/dto/CreateTaskRequest.java
+backend/src/main/java/com/halenteck/demo/dto/AssignedTaskDTO.java
+backend/src/main/java/com/halenteck/demo/dto/StudySummaryDTO.java
+backend/src/main/java/com/halenteck/demo/dto/CreateStudyRequest.java
+
+# BACKEND REPOSITORIES
+backend/src/main/java/com/halenteck/demo/repository/ArtifactRepository.java
+backend/src/main/java/com/halenteck/demo/repository/ComparisonTaskRepository.java
+backend/src/main/java/com/halenteck/demo/repository/StudyRepository.java
+backend/src/main/java/com/halenteck/demo/repository/UserRepository.java
+
+# BACKEND SECURITY (JWT logging ile!)
+backend/src/main/java/com/halenteck/demo/security/SecurityConfig.java
+backend/src/main/java/com/halenteck/demo/security/JwtAuthenticationFilter.java
+backend/src/main/java/com/halenteck/demo/security/JwtTokenProvider.java
+backend/src/main/java/com/halenteck/demo/security/CustomUserDetails.java
+
+# BACKEND SERVICE (eğer varsa)
+backend/src/main/java/com/halenteck/demo/service/CustomUserDetailsService.java
+
+# FRONTEND PAGES (Number() conversion ile!)
+frontend/src/pages/ManageStudyTasks.jsx
+frontend/src/pages/ManageStudies.jsx
+frontend/src/pages/ResearcherDashboard.jsx
+
+# SQL MIGRATION
+backend/fix_foreign_keys.sql
+
+# STORE ARTIFACTS (eğer varsa)
+backend/src/main/java/com/halenteck/demo/store/controller/StoreArtifactController.java
+backend/src/main/java/com/halenteck/demo/store/entity/StoreArtifactEntity.java
+backend/src/main/java/com/halenteck/demo/store/repository/StoreArtifactRepo.java
