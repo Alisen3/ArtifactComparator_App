@@ -98,8 +98,12 @@ const ManageStudyTasks = () => {
                 artifactAId: Number(selectedArtifactA),
                 artifactBId: Number(selectedArtifactB)
             };
+            console.log('Request body:', requestBody);
+            console.log('Study ID:', studyId);
+
             // (Bu API zaten StudyController'da mevcuttu)
-            await api.post(`/api/studies/${studyId}/tasks`, requestBody);
+            const response = await api.post(`/api/studies/${studyId}/tasks`, requestBody);
+            console.log('Success response:', response.data);
 
             setFormMessage({ type: 'success', text: 'Task assigned successfully!' });
 
@@ -112,8 +116,13 @@ const ManageStudyTasks = () => {
             fetchTasksOnly();
 
         } catch (err) {
-            console.error("Task assign error:", err);
-            setFormMessage({ type: 'error', text: err.response?.data?.message || 'Could not assign task.' });
+            console.error("Task assign error - Full error:", err);
+            console.error("Error response:", err.response);
+            console.error("Error data:", err.response?.data);
+            console.error("Error status:", err.response?.status);
+
+            const errorMessage = err.response?.data?.message || err.response?.data || err.message || 'Could not assign task.';
+            setFormMessage({ type: 'error', text: `Error: ${errorMessage}` });
         }
     };
 
