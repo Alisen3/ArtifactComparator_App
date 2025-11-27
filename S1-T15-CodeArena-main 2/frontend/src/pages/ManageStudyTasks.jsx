@@ -94,9 +94,9 @@ const ManageStudyTasks = () => {
 
         try {
             const requestBody = {
-                participantId: selectedParticipant,
-                artifactAId: selectedArtifactA,
-                artifactBId: selectedArtifactB
+                participantId: Number(selectedParticipant),
+                artifactAId: Number(selectedArtifactA),
+                artifactBId: Number(selectedArtifactB)
             };
             // (Bu API zaten StudyController'da mevcuttu)
             await api.post(`/api/studies/${studyId}/tasks`, requestBody);
