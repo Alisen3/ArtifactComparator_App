@@ -34,17 +34,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         try {
+            String requestURI = request.getRequestURI();
+            String method = request.getMethod();
+
             // 1. İstekten JWT'yi (Token'ı) al
             String jwt = getJwtFromRequest(request);
+
+            System.out.println("=== JWT AUTHENTICATION FILTER ===");
+            System.out.println("Request: " + method + " " + requestURI);
+            System.out.println("Has JWT: " + (jwt != null));
 
             // 2. Token'ı doğrula
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
 
                 // 3. Token'dan kullanıcı adını (username) al
                 String username = tokenProvider.getUsernameFromJWT(jwt);
+                System.out.println("Username from JWT: " + username);
 
                 // 4. Veritabanından kullanıcıyı (UserDetails) yükle
                 UserDetails userDetails = customUserDetailsService.loadUserByUsername(username);
+                System.out.println("User loaded, authorities: " + userDetails.getAuthorities());
 
                 // 5. Spring Security için bir "Kimlik Doğrulama" (Authentication) nesnesi oluştur
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
@@ -56,8 +65,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 // 6. Bu kimlik doğrulamasını Spring Security'nin "Context"ine (bağlamına) yerleştir.
                 // Artık Spring Security bu kullanıcının giriş yapmış olduğunu bilir.
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                System.out.println("Authentication set successfully");
+            } else {
+                System.out.println("JWT validation failed or no JWT present");
             }
         } catch (Exception ex) {
+            System.err.println("JWT Authentication error: " + ex.getMessage());
             logger.error("Could not set user authentication in security context", ex);
         }
 

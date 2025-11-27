@@ -68,41 +68,69 @@ public class StudyController {
                                                                  @PathVariable Long studyId,
                                                                  @RequestBody CreateTaskRequest request,
                                                                  Principal principal) {
-        UserEntity creator = userRepository.findByName(principal.getName())
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
-        StudyEntity study = studyRepository.findById(studyId)
-                .orElseThrow(() -> new RuntimeException("Study not found"));
-        UserEntity participant = userRepository.findById(request.participantId())
-                .orElseThrow(() -> new RuntimeException("Participant not found"));
-        ArtifactEntity artifactA = artifactRepository.findById(request.artifactAId())
-                .orElseThrow(() -> new RuntimeException("Artifact A not found"));
-        ArtifactEntity artifactB = artifactRepository.findById(request.artifactBId())
-                .orElseThrow(() -> new RuntimeException("Artifact B not found"));
+        try {
+            System.out.println("=== CREATE TASK REQUEST ===");
+            System.out.println("Study ID: " + studyId);
+            System.out.println("Participant ID: " + request.participantId());
+            System.out.println("Artifact A ID: " + request.artifactAId());
+            System.out.println("Artifact B ID: " + request.artifactBId());
+            System.out.println("Principal: " + principal.getName());
 
-        if (!study.getCreator().getId().equals(creator.getId())) {
-            throw new AccessDeniedException("You are not the creator of this study.");
+            UserEntity creator = userRepository.findByName(principal.getName())
+                    .orElseThrow(() -> new UsernameNotFoundException("User not found: " + principal.getName()));
+            System.out.println("Creator found: " + creator.getId());
+
+            StudyEntity study = studyRepository.findById(studyId)
+                    .orElseThrow(() -> new RuntimeException("Study not found with ID: " + studyId));
+            System.out.println("Study found: " + study.getId());
+
+            UserEntity participant = userRepository.findById(request.participantId())
+                    .orElseThrow(() -> new RuntimeException("Participant not found with ID: " + request.participantId()));
+            System.out.println("Participant found: " + participant.getId());
+
+            ArtifactEntity artifactA = artifactRepository.findById(request.artifactAId())
+                    .orElseThrow(() -> new RuntimeException("Artifact A not found with ID: " + request.artifactAId()));
+            System.out.println("Artifact A found: " + artifactA.getId());
+
+            ArtifactEntity artifactB = artifactRepository.findById(request.artifactBId())
+                    .orElseThrow(() -> new RuntimeException("Artifact B not found with ID: " + request.artifactBId()));
+            System.out.println("Artifact B found: " + artifactB.getId());
+
+            if (!study.getCreator().getId().equals(creator.getId())) {
+                throw new AccessDeniedException("You are not the creator of this study.");
+            }
+
+            ComparisonTaskEntity newTask = new ComparisonTaskEntity(study, participant, artifactA, artifactB);
+            System.out.println("Task entity created, saving...");
+
+            // Veritabanına kaydet (newTask nesnesi ID'sini ve createdAt zamanını alır)
+            taskRepository.save(newTask);
+            System.out.println("Task saved successfully with ID: " + newTask.getId());
+
+            // HAM ENTITY YERİNE GÜVENLİ DTO'YU DÖNDÜR
+            AssignedTaskDTO responseDTO = new AssignedTaskDTO(
+                    newTask.getId(),
+                    newTask.getParticipant().getId(),
+                    newTask.getParticipant().getName(),
+                    newTask.getArtifactA().getId(),
+                    newTask.getArtifactA().getFileName(),
+                    newTask.getArtifactB().getId(),
+                    newTask.getArtifactB().getFileName(),
+                    newTask.getStatus(),
+                    newTask.getCreatedAt(),
+                    newTask.getCompletedAt()
+            );
+
+            System.out.println("=== TASK CREATED SUCCESSFULLY ===");
+            return ResponseEntity.status(HttpStatus.CREATED).body(responseDTO);
+
+        } catch (Exception e) {
+            System.err.println("=== ERROR CREATING TASK ===");
+            System.err.println("Error type: " + e.getClass().getName());
+            System.err.println("Error message: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
         }
-
-        ComparisonTaskEntity newTask = new ComparisonTaskEntity(study, participant, artifactA, artifactB);
-
-        // Veritabanına kaydet (newTask nesnesi ID'sini ve createdAt zamanını alır)
-        taskRepository.save(newTask);
-
-        // HAM ENTITY YERİNE GÜVENLİ DTO'YU DÖNDÜR
-        AssignedTaskDTO responseDTO = new AssignedTaskDTO(
-                newTask.getId(),
-                newTask.getParticipant().getId(),
-                newTask.getParticipant().getName(),
-                newTask.getArtifactA().getId(),
-                newTask.getArtifactA().getFileName(),
-                newTask.getArtifactB().getId(),
-                newTask.getArtifactB().getFileName(),
-                newTask.getStatus(),
-                newTask.getCreatedAt(),
-                newTask.getCompletedAt()
-        );
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(responseDTO);
     }
 
     /**
