@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
-@Table(name = "artifacts")
+@Table(name = "store_artifacts")
 public class ArtifactEntity {
 
     @Id
