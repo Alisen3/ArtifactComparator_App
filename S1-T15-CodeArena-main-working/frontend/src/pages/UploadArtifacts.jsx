@@ -748,6 +748,97 @@ function BulkImportModal({ open, onClose, onUploaded }) {
     );
 }
 
+/* --------- NEW FOLDER MODAL --------- */
+function NewFolderModal({ open, onClose, onFolderCreated }) {
+    const [folderName, setFolderName] = useState("");
+    const [creating, setCreating] = useState(false);
+    const [errorMsg, setErrorMsg] = useState(null);
+
+    useEffect(() => {
+        if (open) {
+            setFolderName("");
+            setErrorMsg(null);
+        }
+    }, [open]);
+
+    const handleCreate = async () => {
+        if (!folderName.trim()) {
+            setErrorMsg("Folder name cannot be empty.");
+            return;
+        }
+
+        setCreating(true);
+        setErrorMsg(null);
+
+        try {
+            await api.post("/api/folders", { name: folderName });
+            onFolderCreated();
+            onClose();
+        } catch (err) {
+            setErrorMsg(err.response?.data?.error || err.message);
+        } finally {
+            setCreating(false);
+        }
+    };
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter' && !creating) {
+            handleCreate();
+        }
+    };
+
+    return (
+        <AnimatePresence>
+            {open && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" }}>
+                    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 500, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
+                        <div style={cardHeader}>
+                            <div style={{ color: T.text, fontWeight: 600 }}>Create New Folder</div>
+                            <button onClick={onClose} style={{ background: "transparent", border: "none", cursor: "pointer" }}><X color={T.muted} /></button>
+                        </div>
+                        <div style={{ padding: 24, display: "grid", gap: 16 }}>
+                            <div style={vStack(8)}>
+                                <div style={{ color: T.text, fontSize: 14 }}>Folder Name</div>
+                                <input
+                                    autoFocus
+                                    placeholder="Enter folder name..."
+                                    value={folderName}
+                                    onChange={(e) => setFolderName(e.target.value)}
+                                    onKeyPress={handleKeyPress}
+                                    style={{ ...inputBase, width: "100%", border: `1px solid ${T.brand}`, background: T.panelSoft, borderRadius: 12, padding: "10px 12px" }}
+                                />
+                                {errorMsg && (
+                                    <div style={{
+                                        padding: "8px 12px",
+                                        borderRadius: 8,
+                                        background: "rgba(239, 68, 68, 0.15)",
+                                        border: "1px solid #EF4444",
+                                        color: "#EF4444",
+                                        fontSize: 12,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 8
+                                    }}>
+                                        <X size={14} />
+                                        {errorMsg}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ ...hStack(8, "flex-end") }}>
+                                <Button variant="ghost" onClick={onClose} disabled={creating}>Cancel</Button>
+                                <Button icon={FolderPlus} onClick={handleCreate} disabled={creating}>
+                                    {creating ? "Creating..." : "Create Folder"}
+                                </Button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
 /* --------- TAG EDIT MODAL --------- */
 function TagEditModal({ open, onClose, artifact, onTagsUpdated }) {
     const [tags, setTags] = useState("");
@@ -828,6 +919,7 @@ export default function UploadArtifacts() {
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [showBulkImport, setShowBulkImport] = useState(false);
     const [showTagEdit, setShowTagEdit] = useState(false);
+    const [showNewFolder, setShowNewFolder] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [drawerFilename, setDrawerFilename] = useState(null);
     const [selectedArtifactForTagEdit, setSelectedArtifactForTagEdit] = useState(null);
@@ -928,8 +1020,8 @@ const handleDeleteFolder = (folderId, folderName) => {
         // 2. Arama Filtresi (İsim veya Etiket)
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
-            result = result.filter(r => 
-                r.filename.toLowerCase().includes(q) || 
+            result = result.filter(r =>
+                r.filename.toLowerCase().includes(q) ||
                 (r.tags && r.tags.some(t => {
                     const tName = typeof t === 'string' ? t : t.name;
                     return tName.toLowerCase().includes(q);
@@ -945,17 +1037,8 @@ const handleDeleteFolder = (folderId, folderName) => {
         return result;
     }, [rows, selectedFolderId, searchQuery, filterType]);
 
-    const createFolderPrompt = async () => {
-        const folderName = prompt("Enter new folder name:");
-        if (folderName && folderName.trim()) {
-            try {
-                await api.post("/api/folders", { name: folderName });
-                alert(`Folder "${folderName}" created successfully!`);
-                fetchFolders();
-            } catch (err) {
-                alert("Failed to create folder: " + (err.response?.data?.error || err.message));
-            }
-        }
+    const onFolderCreated = () => {
+        fetchFolders();
     };
 
     const onUploaded = () => {
@@ -1103,7 +1186,7 @@ const handleDeleteFolder = (folderId, folderName) => {
                                     <Button variant="subtle" icon={UploadCloud} onClick={() => setShowBulkUpload(true)}>Bulk Upload</Button>
                                     <Button variant="subtle" icon={FileJson} onClick={() => setShowBulkImport(true)}>Bulk Import</Button>
                                     {/* Tag butonu kaldırıldı */}
-                                    <Button variant="subtle" icon={FolderPlus} onClick={createFolderPrompt}>New folder</Button>
+                                    <Button variant="subtle" icon={FolderPlus} onClick={() => setShowNewFolder(true)}>New folder</Button>
                                 </div>
                             </div>
                         </div>
@@ -1210,6 +1293,7 @@ const handleDeleteFolder = (folderId, folderName) => {
             <UploadWizard open={showWizard} onClose={() => setShowWizard(false)} onUploaded={onUploaded} />
             <BulkUploadModal open={showBulkUpload} onClose={() => setShowBulkUpload(false)} onUploaded={onUploaded} />
             <BulkImportModal open={showBulkImport} onClose={() => setShowBulkImport(false)} onUploaded={onUploaded} />
+            <NewFolderModal open={showNewFolder} onClose={() => setShowNewFolder(false)} onFolderCreated={onFolderCreated} />
             <TagEditModal open={showTagEdit} onClose={() => setShowTagEdit(false)} artifact={selectedArtifactForTagEdit} onTagsUpdated={onTagsUpdated} />
 
             <MoveArtifactModal 
