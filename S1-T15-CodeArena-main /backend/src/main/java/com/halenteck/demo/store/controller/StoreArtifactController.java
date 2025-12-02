@@ -292,6 +292,330 @@ public class StoreArtifactController {
         }
     }
 
+    // --- 7. BULK UPLOAD (Birden fazla dosya yükleme) ---
+    @PostMapping(value = "/bulk-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> bulkUpload(@RequestParam("files") MultipartFile[] files,
+                                        @RequestParam(value = "folderId", required = false) Long folderId,
+                                        @RequestParam(value = "tags", required = false) List<String> tags,
+                                        Authentication authentication) {
+        try {
+            if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Yetkisiz erişim."));
+            }
+
+            CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+            Long ownerId = userDetails.getId();
+
+            List<Map<String, Object>> results = new ArrayList<>();
+            int successCount = 0;
+            int failureCount = 0;
+            int duplicateCount = 0;
+
+            for (MultipartFile file : files) {
+                try {
+                    // Hash Hesapla
+                    String sha256 = sha256Hex(file.getBytes());
+
+                    // Duplicate kontrolü
+                    if (artifactRepo.existsByOwnerIdAndSha256Hash(ownerId, sha256)) {
+                        duplicateCount++;
+                        results.add(Map.of(
+                            "filename", file.getOriginalFilename(),
+                            "status", "duplicate",
+                            "message", "Bu içerikte bir dosya zaten yüklü."
+                        ));
+                        continue;
+                    }
+
+                    // Versiyonlama
+                    List<StoreArtifactEntity> existingVersions = artifactRepo
+                            .findByOwnerIdAndFilenameOrderByVersionNumberDesc(ownerId, file.getOriginalFilename());
+
+                    for (StoreArtifactEntity oldArtifact : existingVersions) {
+                        oldArtifact.setIsCurrentVersion(false);
+                        if (oldArtifact.getStoragePath() == null) {
+                            oldArtifact.setStoragePath("db://");
+                        }
+                        if (oldArtifact.getStorageUrl() == null || oldArtifact.getStorageUrl().isEmpty()) {
+                            oldArtifact.setStorageUrl("/api/store-artifacts/download/" + oldArtifact.getId());
+                        }
+                        artifactRepo.save(oldArtifact);
+                    }
+
+                    int nextVersion = existingVersions.isEmpty() ? 1 : existingVersions.get(0).getVersionNumber() + 1;
+
+                    // Yeni artifact oluştur
+                    StoreArtifactEntity artifact = new StoreArtifactEntity();
+                    artifact.setOwnerId(ownerId);
+                    artifact.setFilename(file.getOriginalFilename());
+                    artifact.setMimeType(file.getContentType());
+                    artifact.setSizeBytes(file.getSize());
+                    artifact.setSha256Hash(sha256);
+                    artifact.setIsActive(true);
+                    artifact.setVersionNumber(nextVersion);
+                    artifact.setIsCurrentVersion(true);
+                    artifact.setCreatedAt(Instant.now());
+                    artifact.setUpdatedAt(Instant.now());
+                    artifact.setStoragePath("db://");
+                    artifact.setStorageUrl("/api/store-artifacts/download/temp");
+                    artifact.setData(file.getBytes());
+
+                    // Klasör
+                    if (folderId != null) {
+                        Optional<FolderEntity> folderOpt = folderRepo.findById(folderId);
+                        if (folderOpt.isPresent() && folderOpt.get().getOwnerId().equals(ownerId)) {
+                            artifact.setFolder(folderOpt.get());
+                        }
+                    }
+
+                    // Etiketler
+                    if (tags != null && !tags.isEmpty()) {
+                        Set<TagEntity> tagEntities = new HashSet<>();
+                        for (String tagName : tags) {
+                            String cleanTag = tagName.trim();
+                            if (!cleanTag.isEmpty()) {
+                                TagEntity tag = tagRepo.findByName(cleanTag)
+                                        .orElseGet(() -> {
+                                            TagEntity newTag = new TagEntity();
+                                            newTag.setName(cleanTag);
+                                            return tagRepo.save(newTag);
+                                        });
+                                tagEntities.add(tag);
+                            }
+                        }
+                        artifact.setTags(tagEntities);
+                    }
+
+                    // Preview
+                    String mimeType = file.getContentType();
+                    if (mimeType != null) {
+                        boolean isText = mimeType.startsWith("text/") ||
+                                         (mimeType.contains("json") && !mimeType.contains("openxmlformats")) ||
+                                         (mimeType.contains("xml") && !mimeType.contains("openxmlformats")) ||
+                                         mimeType.contains("javascript");
+
+                        if (isText) {
+                            String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+                            if (!content.contains("\u0000")) {
+                                String preview = content.length() > 1000 ? content.substring(0, 1000) + "..." : content;
+                                artifact.setPreviewText(preview);
+                            }
+                        }
+                    }
+
+                    // Kaydet
+                    StoreArtifactEntity savedArtifact = artifactRepo.save(artifact);
+                    savedArtifact.setStorageUrl("/api/store-artifacts/download/" + savedArtifact.getId());
+                    artifactRepo.save(savedArtifact);
+
+                    successCount++;
+                    results.add(Map.of(
+                        "filename", file.getOriginalFilename(),
+                        "status", "success",
+                        "id", savedArtifact.getId(),
+                        "version", nextVersion
+                    ));
+
+                } catch (Exception ex) {
+                    failureCount++;
+                    results.add(Map.of(
+                        "filename", file.getOriginalFilename(),
+                        "status", "error",
+                        "message", ex.getMessage()
+                    ));
+                }
+            }
+
+            return ResponseEntity.ok(Map.of(
+                "total", files.length,
+                "success", successCount,
+                "failure", failureCount,
+                "duplicate", duplicateCount,
+                "results", results
+            ));
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    // --- 8. BULK IMPORT (CSV/JSON'dan artifact bilgilerini import etme) ---
+    @PostMapping("/bulk-import")
+    public ResponseEntity<?> bulkImport(@RequestBody Map<String, Object> importData,
+                                        Authentication authentication) {
+        try {
+            if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Yetkisiz erişim."));
+            }
+
+            CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+            Long ownerId = userDetails.getId();
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> artifacts = (List<Map<String, Object>>) importData.get("artifacts");
+
+            if (artifacts == null || artifacts.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Artifact listesi boş olamaz."));
+            }
+
+            List<Map<String, Object>> results = new ArrayList<>();
+            int successCount = 0;
+            int failureCount = 0;
+
+            for (Map<String, Object> artifactData : artifacts) {
+                try {
+                    String filename = (String) artifactData.get("filename");
+                    String mimeType = (String) artifactData.getOrDefault("mimeType", "application/octet-stream");
+                    String base64Data = (String) artifactData.get("data");
+
+                    if (filename == null || base64Data == null) {
+                        failureCount++;
+                        results.add(Map.of(
+                            "filename", filename != null ? filename : "unknown",
+                            "status", "error",
+                            "message", "Filename ve data alanları zorunludur."
+                        ));
+                        continue;
+                    }
+
+                    // Base64'ten byte array'e çevir
+                    byte[] fileData = Base64.getDecoder().decode(base64Data);
+
+                    // Hash hesapla
+                    String sha256 = sha256Hex(fileData);
+
+                    // Duplicate kontrolü
+                    if (artifactRepo.existsByOwnerIdAndSha256Hash(ownerId, sha256)) {
+                        failureCount++;
+                        results.add(Map.of(
+                            "filename", filename,
+                            "status", "duplicate",
+                            "message", "Bu içerikte bir dosya zaten yüklü."
+                        ));
+                        continue;
+                    }
+
+                    // Versiyonlama
+                    List<StoreArtifactEntity> existingVersions = artifactRepo
+                            .findByOwnerIdAndFilenameOrderByVersionNumberDesc(ownerId, filename);
+
+                    for (StoreArtifactEntity oldArtifact : existingVersions) {
+                        oldArtifact.setIsCurrentVersion(false);
+                        if (oldArtifact.getStoragePath() == null) {
+                            oldArtifact.setStoragePath("db://");
+                        }
+                        if (oldArtifact.getStorageUrl() == null || oldArtifact.getStorageUrl().isEmpty()) {
+                            oldArtifact.setStorageUrl("/api/store-artifacts/download/" + oldArtifact.getId());
+                        }
+                        artifactRepo.save(oldArtifact);
+                    }
+
+                    int nextVersion = existingVersions.isEmpty() ? 1 : existingVersions.get(0).getVersionNumber() + 1;
+
+                    // Yeni artifact oluştur
+                    StoreArtifactEntity artifact = new StoreArtifactEntity();
+                    artifact.setOwnerId(ownerId);
+                    artifact.setFilename(filename);
+                    artifact.setMimeType(mimeType);
+                    artifact.setSizeBytes((long) fileData.length);
+                    artifact.setSha256Hash(sha256);
+                    artifact.setIsActive(true);
+                    artifact.setVersionNumber(nextVersion);
+                    artifact.setIsCurrentVersion(true);
+                    artifact.setCreatedAt(Instant.now());
+                    artifact.setUpdatedAt(Instant.now());
+                    artifact.setStoragePath("db://");
+                    artifact.setStorageUrl("/api/store-artifacts/download/temp");
+                    artifact.setData(fileData);
+
+                    // Klasör
+                    Object folderIdObj = artifactData.get("folderId");
+                    if (folderIdObj != null) {
+                        Long folderId = Long.valueOf(folderIdObj.toString());
+                        Optional<FolderEntity> folderOpt = folderRepo.findById(folderId);
+                        if (folderOpt.isPresent() && folderOpt.get().getOwnerId().equals(ownerId)) {
+                            artifact.setFolder(folderOpt.get());
+                        }
+                    }
+
+                    // Etiketler
+                    @SuppressWarnings("unchecked")
+                    List<String> tags = (List<String>) artifactData.get("tags");
+                    if (tags != null && !tags.isEmpty()) {
+                        Set<TagEntity> tagEntities = new HashSet<>();
+                        for (String tagName : tags) {
+                            String cleanTag = tagName.trim();
+                            if (!cleanTag.isEmpty()) {
+                                TagEntity tag = tagRepo.findByName(cleanTag)
+                                        .orElseGet(() -> {
+                                            TagEntity newTag = new TagEntity();
+                                            newTag.setName(cleanTag);
+                                            return tagRepo.save(newTag);
+                                        });
+                                tagEntities.add(tag);
+                            }
+                        }
+                        artifact.setTags(tagEntities);
+                    }
+
+                    // Preview
+                    if (mimeType != null) {
+                        boolean isText = mimeType.startsWith("text/") ||
+                                         (mimeType.contains("json") && !mimeType.contains("openxmlformats")) ||
+                                         (mimeType.contains("xml") && !mimeType.contains("openxmlformats")) ||
+                                         mimeType.contains("javascript");
+
+                        if (isText) {
+                            String content = new String(fileData, StandardCharsets.UTF_8);
+                            if (!content.contains("\u0000")) {
+                                String preview = content.length() > 1000 ? content.substring(0, 1000) + "..." : content;
+                                artifact.setPreviewText(preview);
+                            }
+                        }
+                    }
+
+                    // Kaydet
+                    StoreArtifactEntity savedArtifact = artifactRepo.save(artifact);
+                    savedArtifact.setStorageUrl("/api/store-artifacts/download/" + savedArtifact.getId());
+                    artifactRepo.save(savedArtifact);
+
+                    successCount++;
+                    results.add(Map.of(
+                        "filename", filename,
+                        "status", "success",
+                        "id", savedArtifact.getId(),
+                        "version", nextVersion
+                    ));
+
+                } catch (Exception ex) {
+                    failureCount++;
+                    results.add(Map.of(
+                        "filename", artifactData.getOrDefault("filename", "unknown"),
+                        "status", "error",
+                        "message", ex.getMessage()
+                    ));
+                }
+            }
+
+            return ResponseEntity.ok(Map.of(
+                "total", artifacts.size(),
+                "success", successCount,
+                "failure", failureCount,
+                "results", results
+            ));
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", ex.getMessage()));
+        }
+    }
+
     // --- YARDIMCI METODLAR ---
     private static String sha256Hex(byte[] data) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
