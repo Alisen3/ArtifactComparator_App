@@ -18,16 +18,9 @@ public class StoreArtifactEntity {
     @Column(name = "owner_id", nullable = false)
     private Long ownerId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "folder_id")
-    @JsonIgnore
     private FolderEntity folder;
-
-    @Transient
-    @JsonProperty("folderId")
-    public Long getFolderId() {
-        return (this.folder != null) ? this.folder.getId() : null;
-    }
 
     @Column(nullable = false)
     private String filename;
