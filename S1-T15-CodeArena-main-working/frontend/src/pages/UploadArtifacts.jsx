@@ -4,7 +4,7 @@ import { useAuth, api } from "../context/AuthContext";
 import {
     Upload, PlusCircle, Search, Tag, FolderPlus, SlidersHorizontal,
     FileText, Trash2, CheckCircle2, X, ChevronRight, Layers,
-    RefreshCw, ExternalLink, Clock, UploadCloud, FileJson
+    RefreshCw, ExternalLink, Clock, UploadCloud, FileJson, Edit
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -67,11 +67,11 @@ const handleDownload = async (id, filename, mimeType) => {
 };
 
 /* --------- TABLO SATIRI --------- */
-function ArtifactRow({ item, onClickVersions, onDelete }) {
-    const tagsDisplay = item.tags && item.tags.length > 0 
-        ? item.tags.map(t => (typeof t === 'string' ? t : t.name)).join(", ") 
+function ArtifactRow({ item, onClickVersions, onDelete, onEditTags }) {
+    const tagsDisplay = item.tags && item.tags.length > 0
+        ? item.tags.map(t => (typeof t === 'string' ? t : t.name)).join(", ")
         : "—";
-    
+
     const folderName = item.folder ? `📁 ${item.folder.name}` : "";
 
     return (
@@ -80,7 +80,7 @@ function ArtifactRow({ item, onClickVersions, onDelete }) {
                 <FileText size={18} color={T.muted} />
                 <div style={vStack(4)}>
                     <div style={{ color: T.text, fontSize: 14 }}>
-                        {item.filename} 
+                        {item.filename}
                         {/* Güncel Versiyon Etiketi */}
                         <span style={{color: T.brand2, fontSize: 12, marginLeft: 8, background: 'rgba(34, 197, 94, 0.1)', padding: '2px 6px', borderRadius: 4}}>v{item.version} (Latest)</span>
                         <span style={{color: T.muted, fontSize: 12, marginLeft: 8}}>{folderName}</span>
@@ -88,7 +88,12 @@ function ArtifactRow({ item, onClickVersions, onDelete }) {
                     <div style={{ color: T.muted, fontSize: 12 }}>{item.sizeLabel} • {item.mimeShort}</div>
                 </div>
             </div>
-            <div style={{ color: T.muted, fontSize: 13 }}>{tagsDisplay}</div>
+            <div style={{ color: T.muted, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+                {tagsDisplay}
+                <button onClick={() => onEditTags(item)} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 4 }}>
+                    <Edit size={14} color={T.brand} />
+                </button>
+            </div>
             <div style={{ ...hStack(12, "flex-end", "center") }}>
                 <Button variant="ghost" icon={ExternalLink} onClick={() => handleDownload(item.id, item.filename, item.mimeType)}>Open</Button>
                 <Button variant="subtle" icon={Layers} onClick={() => onClickVersions(item)}>Versions</Button>
@@ -584,14 +589,91 @@ function BulkImportModal({ open, onClose, onUploaded }) {
     );
 }
 
+/* --------- TAG EDIT MODAL --------- */
+function TagEditModal({ open, onClose, artifact, onTagsUpdated }) {
+    const [tags, setTags] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (open && artifact) {
+            // Mevcut tag'leri input'a doldur
+            const currentTags = artifact.tags && artifact.tags.length > 0
+                ? artifact.tags.map(t => (typeof t === 'string' ? t : t.name)).join(", ")
+                : "";
+            setTags(currentTags);
+        }
+    }, [open, artifact]);
+
+    const saveTagChanges = async () => {
+        if (!artifact) return;
+
+        setSaving(true);
+        try {
+            const tagArray = tags.split(",").map(t => t.trim()).filter(t => t.length > 0);
+            await api.patch(`/api/store-artifacts/${artifact.id}/tags`, {
+                tags: tagArray
+            });
+            onTagsUpdated();
+            onClose();
+        } catch (err) {
+            alert("Failed to update tags: " + (err.response?.data?.error || err.message));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const reset = () => {
+        setTags("");
+    };
+
+    return (
+        <AnimatePresence>
+            {open && artifact && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" }}>
+                    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 600, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
+                        <div style={cardHeader}>
+                            <div style={{ color: T.text, fontWeight: 600 }}>Edit Tags - {artifact.filename}</div>
+                            <button onClick={() => { reset(); onClose(); }} style={{ background: "transparent", border: "none" }}><X color={T.muted} /></button>
+                        </div>
+                        <div style={{ padding: 24, display: "grid", gap: 16 }}>
+                            <div style={vStack(8)}>
+                                <div style={{ color: T.text, fontSize: 14 }}>Tags (comma-separated)</div>
+                                <input
+                                    autoFocus
+                                    placeholder="e.g. java, v1, project-x"
+                                    value={tags}
+                                    onChange={(e) => setTags(e.target.value)}
+                                    style={{ ...inputBase, width: "100%", border: `1px solid ${T.brand}`, background: T.panelSoft, borderRadius: 12, padding: "12px" }}
+                                />
+                                <div style={{ color: T.muted, fontSize: 12 }}>
+                                    Enter tags separated by commas. Leave empty to remove all tags.
+                                </div>
+                            </div>
+
+                            <div style={{ ...hStack(8, "flex-end") }}>
+                                <Button variant="ghost" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+                                <Button icon={Tag} onClick={saveTagChanges} disabled={saving}>
+                                    {saving ? "Saving..." : "Save Tags"}
+                                </Button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
 /* --------- PAGE MAIN --------- */
 export default function UploadArtifacts() {
     const [showWizard, setShowWizard] = useState(false);
     const [showBulkUpload, setShowBulkUpload] = useState(false);
     const [showBulkImport, setShowBulkImport] = useState(false);
+    const [showTagEdit, setShowTagEdit] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
     // Drawer'a dosya adını göndermemiz lazım (History için)
     const [drawerFilename, setDrawerFilename] = useState(null);
+    const [selectedArtifactForTagEdit, setSelectedArtifactForTagEdit] = useState(null);
     const [rows, setRows] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -658,12 +740,22 @@ export default function UploadArtifacts() {
 
     const doDelete = async (item) => {
         if (!window.confirm(`Delete "${item.filename}" (This Version)?`)) return;
-        try { 
-            await api.delete(`/api/store-artifacts/${item.id}`); 
+        try {
+            await api.delete(`/api/store-artifacts/${item.id}`);
             // Silindikten sonra listeyi yenile (Eğer current silindiyse yenisi current olabilir veya liste boşalır)
-            fetchArtifacts(); 
+            fetchArtifacts();
         }
         catch (err) { alert("Silinemedi: " + err.message); }
+    };
+
+    const openTagEdit = (item) => {
+        setSelectedArtifactForTagEdit(item);
+        setShowTagEdit(true);
+    };
+
+    const onTagsUpdated = () => {
+        // Tag'ler güncellendikten sonra listeyi yenile
+        fetchArtifacts();
     };
 
     return (
@@ -680,7 +772,7 @@ export default function UploadArtifacts() {
                                 <div style={{ display: "grid", gridTemplateColumns: "6fr 3fr 3fr", padding: "10px 16px", fontSize: 12, color: T.muted, borderBottom: `1px solid ${T.stroke}` }}>
                                     <div>Name</div><div>Tags</div><div style={{ textAlign: "right" }}>Actions</div>
                                 </div>
-                                {isLoading ? <div style={{ padding: 16, color: T.muted }}>Loading...</div> : rows.map(r => <ArtifactRow key={r.id} item={r} onClickVersions={openVersions} onDelete={doDelete} />)}
+                                {isLoading ? <div style={{ padding: 16, color: T.muted }}>Loading...</div> : rows.map(r => <ArtifactRow key={r.id} item={r} onClickVersions={openVersions} onDelete={doDelete} onEditTags={openTagEdit} />)}
                             </div>
                         </div>
                     </div>
@@ -706,12 +798,13 @@ export default function UploadArtifacts() {
             <UploadWizard open={showWizard} onClose={() => setShowWizard(false)} onUploaded={onUploaded} />
             <BulkUploadModal open={showBulkUpload} onClose={() => setShowBulkUpload(false)} onUploaded={onUploaded} />
             <BulkImportModal open={showBulkImport} onClose={() => setShowBulkImport(false)} onUploaded={onUploaded} />
+            <TagEditModal open={showTagEdit} onClose={() => setShowTagEdit(false)} artifact={selectedArtifactForTagEdit} onTagsUpdated={onTagsUpdated} />
 
             {/* DRAWER GÜNCELLENDİ */}
             <VersionsDrawer
                 open={drawerOpen}
-                onClose={() => setDrawerOpen(false)} 
-                filename={drawerFilename} 
+                onClose={() => setDrawerOpen(false)}
+                filename={drawerFilename}
                 onMakeCurrent={handleMakeCurrent}
             />
         </div>

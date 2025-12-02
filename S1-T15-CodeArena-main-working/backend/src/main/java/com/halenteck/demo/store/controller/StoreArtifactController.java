@@ -257,7 +257,72 @@ public class StoreArtifactController {
         }
     }
 
-    // --- 7. BULK UPLOAD (Birden fazla dosya yükleme) ---
+    // --- 7. UPDATE TAGS (Artifact'ın etiketlerini güncelleme) ---
+    @PatchMapping("/{id}/tags")
+    public ResponseEntity<?> updateArtifactTags(@PathVariable Long id,
+                                                 @RequestBody Map<String, Object> requestBody,
+                                                 Authentication authentication) {
+        try {
+            if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Yetkisiz erişim."));
+            }
+
+            CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+            Long ownerId = userDetails.getId();
+
+            // Artifact'ı bul
+            StoreArtifactEntity artifact = artifactRepo.findById(id)
+                    .orElseThrow(() -> new RuntimeException("Artifact not found"));
+
+            // Yetki kontrolü
+            if (!artifact.getOwnerId().equals(ownerId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Bu dosya size ait değil."));
+            }
+
+            // Yeni tag listesini al
+            @SuppressWarnings("unchecked")
+            List<String> tagNames = (List<String>) requestBody.get("tags");
+
+            if (tagNames == null) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Tags listesi gerekli."));
+            }
+
+            // Mevcut tag'leri temizle ve yeni tag'leri ekle
+            Set<TagEntity> newTags = new HashSet<>();
+            for (String tagName : tagNames) {
+                String cleanTag = tagName.trim();
+                if (!cleanTag.isEmpty()) {
+                    TagEntity tag = tagRepo.findByName(cleanTag)
+                            .orElseGet(() -> {
+                                TagEntity newTag = new TagEntity();
+                                newTag.setName(cleanTag);
+                                return tagRepo.save(newTag);
+                            });
+                    newTags.add(tag);
+                }
+            }
+
+            artifact.setTags(newTags);
+            artifact.setUpdatedAt(Instant.now());
+            StoreArtifactEntity updatedArtifact = artifactRepo.save(artifact);
+
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Tags başarıyla güncellendi.",
+                "artifact", updatedArtifact
+            ));
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    // --- 8. BULK UPLOAD (Birden fazla dosya yükleme) ---
     @PostMapping(value = "/bulk-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> bulkUpload(@RequestParam("files") MultipartFile[] files,
                                         @RequestParam(value = "folderId", required = false) Long folderId,
@@ -397,7 +462,7 @@ public class StoreArtifactController {
         }
     }
 
-    // --- 8. BULK IMPORT (CSV/JSON'dan artifact bilgilerini import etme) ---
+    // --- 9. BULK IMPORT (CSV/JSON'dan artifact bilgilerini import etme) ---
     @PostMapping("/bulk-import")
     public ResponseEntity<?> bulkImport(@RequestBody Map<String, Object> importData,
                                         Authentication authentication) {
