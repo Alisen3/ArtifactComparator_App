@@ -4,7 +4,7 @@ import { useAuth, api } from "../context/AuthContext";
 import {
     Upload, PlusCircle, Search, Tag, FolderPlus, SlidersHorizontal,
     FileText, Trash2, CheckCircle2, X, ChevronRight, Layers,
-    RefreshCw, ExternalLink, Clock
+    RefreshCw, ExternalLink, Clock, UploadCloud, FileJson
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -334,9 +334,261 @@ function UploadWizard({ open, onClose, onUploaded }) {
     );
 }
 
+/* --------- BULK UPLOAD MODAL --------- */
+function BulkUploadModal({ open, onClose, onUploaded }) {
+    const [files, setFiles] = useState([]);
+    const [tags, setTags] = useState("");
+    const [folders, setFolders] = useState([]);
+    const [selectedFolderId, setSelectedFolderId] = useState("");
+    const [uploading, setUploading] = useState(false);
+    const [results, setResults] = useState(null);
+
+    useEffect(() => {
+        if (open) fetchFolders();
+    }, [open]);
+
+    const fetchFolders = async () => {
+        try {
+            const res = await api.get("/api/folders");
+            setFolders(res.data);
+        } catch (err) { console.error("Klasörler alınamadı", err); }
+    };
+
+    const handleFileChange = (e) => {
+        const selectedFiles = Array.from(e.target.files || []);
+        setFiles(selectedFiles);
+    };
+
+    const doBulkUpload = async () => {
+        if (files.length === 0) {
+            alert("Lütfen en az bir dosya seçin.");
+            return;
+        }
+
+        setUploading(true);
+        setResults(null);
+
+        try {
+            const fd = new FormData();
+            files.forEach(file => fd.append("files", file));
+            if (tags) fd.append("tags", tags.split(",").map(t => t.trim()));
+            if (selectedFolderId) fd.append("folderId", selectedFolderId);
+
+            const { data } = await api.post("/api/store-artifacts/bulk-upload", fd, {
+                headers: { "Content-Type": "multipart/form-data" }
+            });
+
+            setResults(data);
+            onUploaded();
+        } catch (err) {
+            alert("Bulk upload failed: " + (err.response?.data?.error || err.message));
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const reset = () => {
+        setFiles([]);
+        setTags("");
+        setSelectedFolderId("");
+        setResults(null);
+    };
+
+    return (
+        <AnimatePresence>
+            {open && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" }}>
+                    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 700, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
+                        <div style={cardHeader}>
+                            <div style={{ color: T.text, fontWeight: 600 }}>Bulk Upload Artifacts</div>
+                            <button onClick={() => { reset(); onClose(); }} style={{ background: "transparent", border: "none" }}><X color={T.muted} /></button>
+                        </div>
+                        <div style={{ padding: 24, display: "grid", gap: 16 }}>
+                            {!results ? (
+                                <>
+                                    <div style={vStack(8)}>
+                                        <div style={{ color: T.text, fontSize: 14 }}>Select Multiple Files</div>
+                                        <label style={{ height: 120, borderRadius: 16, border: `1px solid ${T.stroke}`, background: T.panelSoft, ...hStack(8, "center", "center"), flexDirection: "column", cursor: "pointer" }}>
+                                            <UploadCloud size={32} color={T.muted} />
+                                            <div style={{ color: T.muted, fontSize: 14 }}>Choose files to upload</div>
+                                            <input type="file" multiple style={{ display: "none" }} onChange={handleFileChange} />
+                                        </label>
+                                        <div style={{ color: T.muted, fontSize: 12 }}>
+                                            {files.length > 0 ? `${files.length} file(s) selected` : "No files selected"}
+                                        </div>
+                                        {files.length > 0 && (
+                                            <div style={{ maxHeight: 150, overflowY: "auto", border: `1px solid ${T.stroke}`, borderRadius: 8, padding: 8, background: T.panelSoft }}>
+                                                {files.map((f, i) => (
+                                                    <div key={i} style={{ color: T.text, fontSize: 12, padding: "4px 0" }}>
+                                                        {i + 1}. {f.name} ({toSize(f.size)})
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={vStack(8)}>
+                                        <div style={{ color: T.text, fontSize: 14 }}>Tags (comma-separated)</div>
+                                        <input placeholder="e.g. java, v1, project-x" value={tags} onChange={(e) => setTags(e.target.value)} style={{ ...inputBase, width: "100%", border: `1px solid ${T.stroke}`, background: T.panelSoft, borderRadius: 12, padding: "10px 12px" }} />
+                                    </div>
+
+                                    <div style={vStack(8)}>
+                                        <div style={{ color: T.text, fontSize: 14 }}>Folder (optional)</div>
+                                        <select value={selectedFolderId} onChange={(e) => setSelectedFolderId(e.target.value)} style={{ ...inputBase, width: "100%", border: `1px solid ${T.stroke}`, background: T.panelSoft, borderRadius: 12, padding: "10px 12px", cursor: "pointer" }}>
+                                            <option value="">-- No Folder --</option>
+                                            {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                        </select>
+                                    </div>
+
+                                    <div style={{ ...hStack(8, "flex-end") }}>
+                                        <Button variant="ghost" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+                                        <Button icon={UploadCloud} onClick={doBulkUpload} disabled={uploading}>
+                                            {uploading ? "Uploading..." : "Upload All"}
+                                        </Button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div style={vStack(12)}>
+                                    <div style={{ color: T.text, fontSize: 16, fontWeight: 600 }}>Upload Results</div>
+                                    <div style={{ ...hStack(16), fontSize: 14 }}>
+                                        <span style={{ color: T.brand2 }}>✓ Success: {results.success}</span>
+                                        <span style={{ color: "#EF4444" }}>✗ Failed: {results.failure}</span>
+                                        <span style={{ color: "#F59E0B" }}>⊗ Duplicate: {results.duplicate}</span>
+                                    </div>
+                                    <div style={{ maxHeight: 300, overflowY: "auto", border: `1px solid ${T.stroke}`, borderRadius: 12, padding: 12, background: T.panelSoft }}>
+                                        {results.results.map((r, i) => (
+                                            <div key={i} style={{ padding: "8px 0", borderBottom: i < results.results.length - 1 ? `1px solid ${T.stroke}` : "none", fontSize: 13 }}>
+                                                <div style={{ color: T.text }}>{r.filename}</div>
+                                                <div style={{ color: r.status === 'success' ? T.brand2 : r.status === 'duplicate' ? '#F59E0B' : '#EF4444', fontSize: 12 }}>
+                                                    {r.status === 'success' ? `✓ Uploaded (v${r.version})` : r.status === 'duplicate' ? '⊗ Duplicate' : `✗ ${r.message}`}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <Button onClick={() => { reset(); onClose(); }}>Close</Button>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
+/* --------- BULK IMPORT MODAL --------- */
+function BulkImportModal({ open, onClose, onUploaded }) {
+    const [jsonData, setJsonData] = useState("");
+    const [importing, setImporting] = useState(false);
+    const [results, setResults] = useState(null);
+
+    const doBulkImport = async () => {
+        if (!jsonData.trim()) {
+            alert("Please enter JSON data.");
+            return;
+        }
+
+        setImporting(true);
+        setResults(null);
+
+        try {
+            const parsedData = JSON.parse(jsonData);
+            const { data } = await api.post("/api/store-artifacts/bulk-import", parsedData);
+            setResults(data);
+            onUploaded();
+        } catch (err) {
+            if (err instanceof SyntaxError) {
+                alert("Invalid JSON format: " + err.message);
+            } else {
+                alert("Bulk import failed: " + (err.response?.data?.error || err.message));
+            }
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const reset = () => {
+        setJsonData("");
+        setResults(null);
+    };
+
+    const exampleJson = `{
+  "artifacts": [
+    {
+      "filename": "example.txt",
+      "mimeType": "text/plain",
+      "data": "SGVsbG8gV29ybGQh",
+      "tags": ["example", "test"],
+      "folderId": null
+    }
+  ]
+}`;
+
+    return (
+        <AnimatePresence>
+            {open && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" }}>
+                    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 800, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
+                        <div style={cardHeader}>
+                            <div style={{ color: T.text, fontWeight: 600 }}>Bulk Import from JSON</div>
+                            <button onClick={() => { reset(); onClose(); }} style={{ background: "transparent", border: "none" }}><X color={T.muted} /></button>
+                        </div>
+                        <div style={{ padding: 24, display: "grid", gap: 16 }}>
+                            {!results ? (
+                                <>
+                                    <div style={vStack(8)}>
+                                        <div style={{ color: T.text, fontSize: 14 }}>JSON Data (Base64 encoded files)</div>
+                                        <textarea
+                                            placeholder={exampleJson}
+                                            value={jsonData}
+                                            onChange={(e) => setJsonData(e.target.value)}
+                                            style={{ ...inputBase, width: "100%", minHeight: 300, border: `1px solid ${T.stroke}`, background: T.panelSoft, borderRadius: 12, padding: "12px", fontFamily: "monospace", fontSize: 12, resize: "vertical" }}
+                                        />
+                                        <div style={{ color: T.muted, fontSize: 11 }}>
+                                            Note: "data" field should be Base64 encoded file content
+                                        </div>
+                                    </div>
+
+                                    <div style={{ ...hStack(8, "flex-end") }}>
+                                        <Button variant="ghost" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+                                        <Button icon={FileJson} onClick={doBulkImport} disabled={importing}>
+                                            {importing ? "Importing..." : "Import"}
+                                        </Button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div style={vStack(12)}>
+                                    <div style={{ color: T.text, fontSize: 16, fontWeight: 600 }}>Import Results</div>
+                                    <div style={{ ...hStack(16), fontSize: 14 }}>
+                                        <span style={{ color: T.brand2 }}>✓ Success: {results.success}</span>
+                                        <span style={{ color: "#EF4444" }}>✗ Failed: {results.failure}</span>
+                                    </div>
+                                    <div style={{ maxHeight: 300, overflowY: "auto", border: `1px solid ${T.stroke}`, borderRadius: 12, padding: 12, background: T.panelSoft }}>
+                                        {results.results.map((r, i) => (
+                                            <div key={i} style={{ padding: "8px 0", borderBottom: i < results.results.length - 1 ? `1px solid ${T.stroke}` : "none", fontSize: 13 }}>
+                                                <div style={{ color: T.text }}>{r.filename}</div>
+                                                <div style={{ color: r.status === 'success' ? T.brand2 : r.status === 'duplicate' ? '#F59E0B' : '#EF4444', fontSize: 12 }}>
+                                                    {r.status === 'success' ? `✓ Imported (v${r.version})` : r.status === 'duplicate' ? '⊗ Duplicate' : `✗ ${r.message}`}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <Button onClick={() => { reset(); onClose(); }}>Close</Button>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
 /* --------- PAGE MAIN --------- */
 export default function UploadArtifacts() {
     const [showWizard, setShowWizard] = useState(false);
+    const [showBulkUpload, setShowBulkUpload] = useState(false);
+    const [showBulkImport, setShowBulkImport] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
     // Drawer'a dosya adını göndermemiz lazım (History için)
     const [drawerFilename, setDrawerFilename] = useState(null);
@@ -441,6 +693,8 @@ export default function UploadArtifacts() {
                             <div style={cardBody}>
                                 <div style={{ ...hStack(8), flexWrap: "wrap" }}>
                                     <Button variant="subtle" icon={Upload} onClick={() => setShowWizard(true)}>Upload file</Button>
+                                    <Button variant="subtle" icon={UploadCloud} onClick={() => setShowBulkUpload(true)}>Bulk Upload</Button>
+                                    <Button variant="subtle" icon={FileJson} onClick={() => setShowBulkImport(true)}>Bulk Import</Button>
                                     <Button variant="subtle" icon={Tag} onClick={() => alert("Use upload wizard to add tags.")}>Tag</Button>
                                     <Button variant="subtle" icon={FolderPlus} onClick={createFolderPrompt}>New folder</Button>
                                 </div>
@@ -450,12 +704,14 @@ export default function UploadArtifacts() {
                 </div>
             </div>
             <UploadWizard open={showWizard} onClose={() => setShowWizard(false)} onUploaded={onUploaded} />
-            
+            <BulkUploadModal open={showBulkUpload} onClose={() => setShowBulkUpload(false)} onUploaded={onUploaded} />
+            <BulkImportModal open={showBulkImport} onClose={() => setShowBulkImport(false)} onUploaded={onUploaded} />
+
             {/* DRAWER GÜNCELLENDİ */}
-            <VersionsDrawer 
-                open={drawerOpen} 
-                onClose={() => setDrawerOpen(false)} 
-                filename={drawerFilename} 
+            <VersionsDrawer
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                filename={drawerFilename}
                 onMakeCurrent={handleMakeCurrent}
             />
         </div>
