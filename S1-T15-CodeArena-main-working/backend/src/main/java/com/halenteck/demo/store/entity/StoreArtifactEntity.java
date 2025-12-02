@@ -23,6 +23,12 @@ public class StoreArtifactEntity {
     @JsonIgnore
     private FolderEntity folder;
 
+    @Transient
+    @JsonProperty("folderId")
+    public Long getFolderId() {
+        return (this.folder != null) ? this.folder.getId() : null;
+    }
+
     @Column(nullable = false)
     private String filename;
 

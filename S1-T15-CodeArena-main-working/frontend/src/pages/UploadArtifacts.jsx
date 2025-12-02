@@ -1,10 +1,10 @@
-// src/pages/UploadArtifacts.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useAuth, api } from "../context/AuthContext";
 import {
     Upload, PlusCircle, Search, Tag, FolderPlus, SlidersHorizontal,
     FileText, Trash2, CheckCircle2, X, ChevronRight, Layers,
-    RefreshCw, ExternalLink, Clock, UploadCloud, FileJson, Edit
+    RefreshCw, ExternalLink, Clock, UploadCloud, FileJson, Edit,
+    Folder, FolderInput, Filter, FileCode, FileImage
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -21,8 +21,8 @@ const T = {
     pillBg: "#1c2230",
 };
 
-const pageWrap = { minHeight: "100vh", background: T.bg };
-const container = { maxWidth: 1400, margin: "0 auto", padding: "32px 24px" };
+const pageWrap = { minHeight: "100vh" };
+const container = { width: "100%", padding: "24px" };
 
 const hStack = (gap = 8, justify = "flex-start", align = "center") => ({ display: "flex", gap, justifyContent: justify, alignItems: align });
 const vStack = (gap = 8) => ({ display: "flex", flexDirection: "column", gap });
@@ -32,8 +32,22 @@ const cardBody = { padding: 16 };
 const inputBase = { background: "transparent", outline: "none", border: "none", color: T.text, fontSize: 14 };
 const pill = { fontSize: 12, borderRadius: 12, padding: "4px 8px", background: T.pillBg, color: T.muted };
 
-const btnBase = { display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 16, padding: "8px 14px", fontSize: 14, cursor: "pointer", userSelect: "none", border: "1px solid transparent" };
-
+const btnBase = { 
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 16,
+    padding: "8px 14px",
+    fontSize: 14,
+    cursor: "pointer",
+    userSelect: "none",
+    border: "1px solid transparent",
+  
+    // ✅ TÜM CUSTOM <Button> BİLEŞENLERİ İÇİN
+    outline: "none",
+    boxShadow: "none"
+  };
+  
 const Button = ({ children, icon: Icon, variant = "solid", style, type = "button", ...rest }) => {
     const s = useMemo(() => {
         if (variant === "solid") return { ...btnBase, background: T.brand, color: "#fff" };
@@ -42,6 +56,15 @@ const Button = ({ children, icon: Icon, variant = "solid", style, type = "button
         return btnBase;
     }, [variant]);
     return <button type={type} {...rest} style={{ ...s, ...style }}>{Icon && <Icon size={16} />}{children}</button>;
+};
+
+/* --------- DOSYA TİPİ BELİRLEME YARDIMCISI --------- */
+const getFileTypeCategory = (mimeType) => {
+    if (!mimeType) return "OTHER";
+    if (mimeType.includes("pdf")) return "PDF";
+    if (mimeType.startsWith("image/")) return "IMAGE";
+    if (mimeType.startsWith("text/") || mimeType.includes("javascript") || mimeType.includes("json") || mimeType.includes("java") || mimeType.includes("xml")) return "CODE";
+    return "OTHER";
 };
 
 /* --------- DOSYA İNDİRME --------- */
@@ -67,21 +90,25 @@ const handleDownload = async (id, filename, mimeType) => {
 };
 
 /* --------- TABLO SATIRI --------- */
-function ArtifactRow({ item, onClickVersions, onDelete, onEditTags }) {
+function ArtifactRow({ item, onClickVersions, onDelete, onEditTags, onMove }) {
     const tagsDisplay = item.tags && item.tags.length > 0
         ? item.tags.map(t => (typeof t === 'string' ? t : t.name)).join(", ")
         : "—";
 
     const folderName = item.folder ? `📁 ${item.folder.name}` : "";
 
+    let IconComp = FileText;
+    const cat = getFileTypeCategory(item.mimeType);
+    if (cat === "IMAGE") IconComp = FileImage;
+    if (cat === "CODE") IconComp = FileCode;
+
     return (
-        <div style={{ display: "grid", gridTemplateColumns: "6fr 3fr 3fr", alignItems: "center", padding: "12px 16px", borderBottom: `1px solid ${T.stroke}` }}>
+        <div style={{ display: "grid", gridTemplateColumns: "6fr 3fr 4fr", alignItems: "center", padding: "12px 16px", borderBottom: `1px solid ${T.stroke}` }}>
             <div style={hStack(12, "flex-start", "center")}>
-                <FileText size={18} color={T.muted} />
+                <IconComp size={18} color={T.muted} />
                 <div style={vStack(4)}>
                     <div style={{ color: T.text, fontSize: 14 }}>
                         {item.filename}
-                        {/* Güncel Versiyon Etiketi */}
                         <span style={{color: T.brand2, fontSize: 12, marginLeft: 8, background: 'rgba(34, 197, 94, 0.1)', padding: '2px 6px', borderRadius: 4}}>v{item.version} (Latest)</span>
                         <span style={{color: T.muted, fontSize: 12, marginLeft: 8}}>{folderName}</span>
                     </div>
@@ -94,21 +121,91 @@ function ArtifactRow({ item, onClickVersions, onDelete, onEditTags }) {
                     <Edit size={14} color={T.brand} />
                 </button>
             </div>
-            <div style={{ ...hStack(12, "flex-end", "center") }}>
+            <div style={{ ...hStack(8, "flex-end", "center") }}>
                 <Button variant="ghost" icon={ExternalLink} onClick={() => handleDownload(item.id, item.filename, item.mimeType)}>Open</Button>
-                <Button variant="subtle" icon={Layers} onClick={() => onClickVersions(item)}>Versions</Button>
-                <Button variant="ghost" icon={Trash2} onClick={() => onDelete(item)}>Delete</Button>
+                <Button variant="subtle" icon={FolderInput} onClick={() => onMove(item)}>Move</Button>
+                <Button variant="subtle" icon={Layers} onClick={() => onClickVersions(item)}>Vers.</Button>
+                {/* DEĞİŞİKLİK BURADA: padding: 8 yerine padding: 6 yapıldı */}
+                <Button variant="ghost" icon={Trash2} onClick={() => onDelete(item)} style={{padding: 6}}></Button>
             </div>
         </div>
     );
 }
 
-/* --------- VERSIONS DRAWER (GÜNCELLENDİ - ARTIK API'DEN ÇEKİYOR) --------- */
+/* --------- MOVE ARTIFACT MODAL --------- */
+function MoveArtifactModal({ open, onClose, artifact, folders, onMoved }) {
+    const [selectedFolderId, setSelectedFolderId] = useState("");
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (open && artifact) {
+            setSelectedFolderId(artifact.folder ? artifact.folder.id : "");
+        }
+    }, [open, artifact]);
+
+    const handleMove = async () => {
+        if (!artifact) return;
+        setLoading(true);
+        try {
+            const payload = { 
+                folderId: selectedFolderId === "" ? null : selectedFolderId 
+            };
+            await api.put(`/api/store-artifacts/${artifact.id}/move`, payload);
+            onMoved(); 
+            onClose();
+        } catch (err) {
+            alert("Failed to move artifact: " + (err.response?.data?.error || err.message));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <AnimatePresence>
+            {open && artifact && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" }}>
+                    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 500, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
+                        <div style={cardHeader}>
+                            <div style={{ color: T.text, fontWeight: 600 }}>Move "{artifact.filename}"</div>
+                            <button onClick={onClose} style={{ background: "transparent", border: "none" }}><X color={T.muted} /></button>
+                        </div>
+                        <div style={{ padding: 24, display: "grid", gap: 16 }}>
+                            <div style={vStack(8)}>
+                                <div style={{ color: T.text, fontSize: 14 }}>Select Destination Folder</div>
+                                <select 
+                                    value={selectedFolderId} 
+                                    onChange={(e) => setSelectedFolderId(e.target.value)} 
+                                    style={{ ...inputBase, width: "100%", border: `1px solid ${T.brand}`, background: T.panelSoft, borderRadius: 12, padding: "12px", cursor: "pointer" }}
+                                >
+                                    <option value="">-- Root (No Folder) --</option>
+                                    {folders.map(f => (
+                                        <option key={f.id} value={f.id}>{f.name}</option>
+                                    ))}
+                                </select>
+                                <div style={{ color: T.muted, fontSize: 12 }}>
+                                    Select a folder to move the file to, or select "Root" to remove it from any folder.
+                                </div>
+                            </div>
+
+                            <div style={{ ...hStack(8, "flex-end") }}>
+                                <Button variant="ghost" onClick={onClose}>Cancel</Button>
+                                <Button icon={FolderInput} onClick={handleMove} disabled={loading}>
+                                    {loading ? "Moving..." : "Move File"}
+                                </Button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
+/* --------- VERSIONS DRAWER --------- */
 function VersionsDrawer({ open, onClose, filename, onMakeCurrent }) {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(false);
 
-    // Drawer açıldığında o dosyanın geçmişini çek
     useEffect(() => {
         if (open && filename) {
             fetchHistory();
@@ -118,7 +215,6 @@ function VersionsDrawer({ open, onClose, filename, onMakeCurrent }) {
     const fetchHistory = async () => {
         setLoading(true);
         try {
-            // Backend'e eklediğimiz /history endpoint'i
             const res = await api.get(`/api/store-artifacts/history/${filename}`);
             setHistory(res.data);
         } catch (err) {
@@ -146,7 +242,6 @@ function VersionsDrawer({ open, onClose, filename, onMakeCurrent }) {
                             ) : (
                                 history.map(v => (
                                     <div key={v.id} style={{ border: `1px solid ${v.isCurrentVersion ? T.brand2 : T.stroke}`, borderRadius: 12, background: T.panelSoft, padding: 12, marginBottom: 10, position: 'relative' }}>
-                                        
                                         <div style={hStack(12, "space-between", "flex-start")}>
                                             <div>
                                                 <div style={{ ...hStack(6), marginBottom: 4 }}>
@@ -161,13 +256,10 @@ function VersionsDrawer({ open, onClose, filename, onMakeCurrent }) {
                                                     <Clock size={12}/> {new Date(v.createdAt).toLocaleString()}
                                                 </div>
                                             </div>
-                                            
                                             <div style={vStack(8)}>
                                                 <Button variant="ghost" icon={ExternalLink} style={{fontSize: 12, padding: "6px 10px"}} onClick={() => handleDownload(v.id, v.filename, v.mimeType)}>
                                                     Open
                                                 </Button>
-                                                
-                                                {/* MAKE CURRENT BUTONU (Sadece güncel olmayanda çıkar) */}
                                                 {!v.isCurrentVersion && (
                                                     <Button 
                                                         variant="subtle" 
@@ -191,7 +283,7 @@ function VersionsDrawer({ open, onClose, filename, onMakeCurrent }) {
     );
 }
 
-/* --------- UPLOAD WIZARD (AYNI) --------- */
+/* --------- UPLOAD WIZARD --------- */
 function UploadWizard({ open, onClose, onUploaded }) {
     const [file, setFile] = useState(null);
     const [step, setStep] = useState(1);
@@ -240,21 +332,15 @@ function UploadWizard({ open, onClose, onUploaded }) {
         if (!file) { setMsg({ t: "error", m: "Please choose a file." }); return; }
         try {
             setMsg({ t: "info", m: "Uploading…" });
-            const localMimeType = file.type || "application/octet-stream";
             const fd = new FormData();
             fd.append("file", file);
             if (tags) fd.append("tags", tags);
             if (selectedFolderId) fd.append("folderId", selectedFolderId);
 
-            // Upload sonrası sadece listeyi yenilemesi için onUploaded çağıracağız
-            // Backend otomatik versionluyor.
             const { data } = await api.post("/api/store-artifacts/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
 
             setMsg({ t: "success", m: `Uploaded: ${data.filename} (v${data.versionNumber})` });
-            
-            // Yeni yüklenen dosya, listeyi yenilemesi için parent'a bildirilir
             onUploaded(); 
-            
             setStep(3);
         } catch (err) {
             const isDup = err?.response?.status === 409;
@@ -266,28 +352,52 @@ function UploadWizard({ open, onClose, onUploaded }) {
         <AnimatePresence>
             {open && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" , transition: { duration: 0.8 }}}>
-                    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 980, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
+                    <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 800, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
                         <div style={cardHeader}>
                             <div style={{ color: T.text, fontWeight: 600 }}>Upload Artifact</div>
-                            <button onClick={() => { reset(); onClose(); }} style={{ background: "transparent", border: "none" }}><X color={T.muted} /></button>
                         </div>
                         <div style={{ padding: 24, display: "grid", gridTemplateRows: "auto", gap: 16 }}>
                             {step === 1 && (
-                                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
                                     <div style={vStack(8)}>
                                         <div style={{ color: T.text, fontSize: 14 }}>Choose file</div>
-                                        <label style={{ height: 160, borderRadius: 16, border: `1px solid ${T.stroke}`, background: T.panelSoft, ...hStack(8, "center", "center"), flexDirection: "column", cursor: "pointer" }}>
-                                            <Upload />
-                                            <div style={{ color: T.muted, fontSize: 14 }}>Drag & drop or click to select</div>
+                                        <label style={{ height: 320, borderRadius: 16, border: `1px solid ${T.stroke}`, background: T.panelSoft, ...hStack(8, "center", "center"), flexDirection: "column", cursor: "pointer" }}>
+                                            <Upload size={32} />
+                                            <div style={{ color: T.muted, fontSize: 14, marginTop: 12 }}>Drag & drop or click to select</div>
                                             <input type="file" style={{ display: "none" }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
                                         </label>
                                         <div style={{ color: T.muted, fontSize: 12 }}>{file ? `Selected: ${file.name} (${toSize(file.size)})` : "Ready to upload."}</div>
                                     </div>
-                                    <div style={vStack(8)}>
-                                        <div style={{ color: T.text, fontSize: 14 }}>Options</div>
-                                        <div style={{ ...hStack(8), flexWrap: "wrap" }}><span style={pill}>PDF</span><span style={pill}>Max 50MB</span><span style={pill}>Versioning ON</span></div>
+                                    
+                                    <div style={{ ...hStack(8, "space-between") }}>
+                                    <Button variant="ghost" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+                                    <Button icon={ChevronRight} onClick={() => {
+                                        if (!file) {
+                                            setMsg({ t: "error", m: "Please select a file before continuing." });
+                                            return;
+                                        }
+                                        setMsg(null);
+                                        setStep(2);
+                                    }}>Next</Button>
                                     </div>
-                                    <div style={{ gridColumn: "1 / span 2", ...hStack(8, "flex-end") }}><Button icon={ChevronRight} onClick={() => setStep(2)}>Next</Button></div>
+                                    {msg && step === 1 && (
+                                        <div style={{ 
+                                            marginTop: 8, 
+                                            padding: "10px 14px", 
+                                            borderRadius: 12, 
+                                            background: msg.t === "error" ? "rgba(239, 68, 68, 0.15)" : msg.t === "success" ? "rgba(34, 197, 94, 0.15)" : "rgba(122, 59, 232, 0.15)",
+                                            border: `1px solid ${msg.t === "error" ? "#EF4444" : msg.t === "success" ? T.brand2 : T.brand}`,
+                                            color: msg.t === "error" ? "#EF4444" : msg.t === "success" ? T.brand2 : T.brand,
+                                            fontSize: 13,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8
+                                        }}>
+                                            {msg.t === "error" && <X size={16} />}
+                                            {msg.t === "success" && <CheckCircle2 size={16} />}
+                                            {msg.m}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             {step === 2 && (
@@ -322,7 +432,11 @@ function UploadWizard({ open, onClose, onUploaded }) {
                                             {!showTagInput && !showFolderSection && (<div style={{ color: T.muted, fontSize: 12, marginTop: 4 }}>{tags ? `Tags: ${tags}` : "No tags."} {selectedFolderId ? `| Folder ID: ${selectedFolderId}` : ""}</div>)}
                                         </div>
                                     </div>
-                                    <div style={{ gridColumn: "1 / span 2", ...hStack(8, "space-between") }}><Button variant="ghost" onClick={() => setStep(1)}>Back</Button><Button icon={PlusCircle} onClick={doUpload}>Next</Button></div>
+                                    <div style={{ gridColumn: "1 / span 2", ...hStack(8, "flex-end") }}>
+                                    <Button variant="ghost" onClick={() => { reset(); onClose(); }}>Cancel</Button>
+                                    <Button variant="ghost" onClick={() => setStep(1)}>Back</Button>
+                                    <Button icon={PlusCircle} onClick={doUpload}>Upload</Button>
+                                     </div>
                                 </div>
                             )}
                             {step === 3 && (
@@ -347,9 +461,13 @@ function BulkUploadModal({ open, onClose, onUploaded }) {
     const [selectedFolderId, setSelectedFolderId] = useState("");
     const [uploading, setUploading] = useState(false);
     const [results, setResults] = useState(null);
+    const [errorMsg, setErrorMsg] = useState(null);
 
     useEffect(() => {
-        if (open) fetchFolders();
+        if (open) {
+            fetchFolders();
+            setErrorMsg(null);
+        }
     }, [open]);
 
     const fetchFolders = async () => {
@@ -366,9 +484,10 @@ function BulkUploadModal({ open, onClose, onUploaded }) {
 
     const doBulkUpload = async () => {
         if (files.length === 0) {
-            alert("Lütfen en az bir dosya seçin.");
+            setErrorMsg("Please select at least one file before uploading.");
             return;
         }
+        setErrorMsg(null);
 
         setUploading(true);
         setResults(null);
@@ -397,6 +516,7 @@ function BulkUploadModal({ open, onClose, onUploaded }) {
         setTags("");
         setSelectedFolderId("");
         setResults(null);
+        setErrorMsg(null);
     };
 
     return (
@@ -406,7 +526,6 @@ function BulkUploadModal({ open, onClose, onUploaded }) {
                     <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 700, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
                         <div style={cardHeader}>
                             <div style={{ color: T.text, fontWeight: 600 }}>Bulk Upload Artifacts</div>
-                            <button onClick={() => { reset(); onClose(); }} style={{ background: "transparent", border: "none" }}><X color={T.muted} /></button>
                         </div>
                         <div style={{ padding: 24, display: "grid", gap: 16 }}>
                             {!results ? (
@@ -451,6 +570,23 @@ function BulkUploadModal({ open, onClose, onUploaded }) {
                                             {uploading ? "Uploading..." : "Upload All"}
                                         </Button>
                                     </div>
+                                    
+                                    {errorMsg && (
+                                        <div style={{ 
+                                            padding: "10px 14px", 
+                                            borderRadius: 12, 
+                                            background: "rgba(239, 68, 68, 0.15)",
+                                            border: "1px solid #EF4444",
+                                            color: "#EF4444",
+                                            fontSize: 13,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8
+                                        }}>
+                                            <X size={16} />
+                                            {errorMsg}
+                                        </div>
+                                    )}
                                 </>
                             ) : (
                                 <div style={vStack(12)}>
@@ -486,12 +622,18 @@ function BulkImportModal({ open, onClose, onUploaded }) {
     const [jsonData, setJsonData] = useState("");
     const [importing, setImporting] = useState(false);
     const [results, setResults] = useState(null);
+    const [errorMsg, setErrorMsg] = useState(null);
+
+    useEffect(() => {
+        if (open) setErrorMsg(null);
+    }, [open]);
 
     const doBulkImport = async () => {
         if (!jsonData.trim()) {
-            alert("Please enter JSON data.");
+            setErrorMsg("Please enter JSON data before importing.");
             return;
         }
+        setErrorMsg(null);
 
         setImporting(true);
         setResults(null);
@@ -503,9 +645,9 @@ function BulkImportModal({ open, onClose, onUploaded }) {
             onUploaded();
         } catch (err) {
             if (err instanceof SyntaxError) {
-                alert("Invalid JSON format: " + err.message);
+                setErrorMsg("Invalid JSON format: " + err.message);
             } else {
-                alert("Bulk import failed: " + (err.response?.data?.error || err.message));
+                setErrorMsg("Bulk import failed: " + (err.response?.data?.error || err.message));
             }
         } finally {
             setImporting(false);
@@ -515,6 +657,7 @@ function BulkImportModal({ open, onClose, onUploaded }) {
     const reset = () => {
         setJsonData("");
         setResults(null);
+        setErrorMsg(null);
     };
 
     const exampleJson = `{
@@ -536,7 +679,6 @@ function BulkImportModal({ open, onClose, onUploaded }) {
                     <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 800, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
                         <div style={cardHeader}>
                             <div style={{ color: T.text, fontWeight: 600 }}>Bulk Import from JSON</div>
-                            <button onClick={() => { reset(); onClose(); }} style={{ background: "transparent", border: "none" }}><X color={T.muted} /></button>
                         </div>
                         <div style={{ padding: 24, display: "grid", gap: 16 }}>
                             {!results ? (
@@ -560,6 +702,23 @@ function BulkImportModal({ open, onClose, onUploaded }) {
                                             {importing ? "Importing..." : "Import"}
                                         </Button>
                                     </div>
+                                    
+                                    {errorMsg && (
+                                        <div style={{ 
+                                            padding: "10px 14px", 
+                                            borderRadius: 12, 
+                                            background: "rgba(239, 68, 68, 0.15)",
+                                            border: "1px solid #EF4444",
+                                            color: "#EF4444",
+                                            fontSize: 13,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 8
+                                        }}>
+                                            <X size={16} />
+                                            {errorMsg}
+                                        </div>
+                                    )}
                                 </>
                             ) : (
                                 <div style={vStack(12)}>
@@ -596,7 +755,6 @@ function TagEditModal({ open, onClose, artifact, onTagsUpdated }) {
 
     useEffect(() => {
         if (open && artifact) {
-            // Mevcut tag'leri input'a doldur
             const currentTags = artifact.tags && artifact.tags.length > 0
                 ? artifact.tags.map(t => (typeof t === 'string' ? t : t.name)).join(", ")
                 : "";
@@ -643,7 +801,7 @@ function TagEditModal({ open, onClose, artifact, onTagsUpdated }) {
                                     placeholder="e.g. java, v1, project-x"
                                     value={tags}
                                     onChange={(e) => setTags(e.target.value)}
-                                    style={{ ...inputBase, width: "100%", border: `1px solid ${T.brand}`, background: T.panelSoft, borderRadius: 12, padding: "12px" }}
+                                    style={{ ...inputBase, width: "100%", border: `1px solid ${T.brand}`, background: T.panelSoft, borderRadius: 12, padding: "10px 12px" }}
                                 />
                                 <div style={{ color: T.muted, fontSize: 12 }}>
                                     Enter tags separated by commas. Leave empty to remove all tags.
@@ -671,17 +829,46 @@ export default function UploadArtifacts() {
     const [showBulkImport, setShowBulkImport] = useState(false);
     const [showTagEdit, setShowTagEdit] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
-    // Drawer'a dosya adını göndermemiz lazım (History için)
     const [drawerFilename, setDrawerFilename] = useState(null);
     const [selectedArtifactForTagEdit, setSelectedArtifactForTagEdit] = useState(null);
+    const [hoveredFolderId, setHoveredFolderId] = useState(null);
+    const [confirmConfig, setConfirmConfig] = useState({
+        open: false,
+        title: "",
+        message: "",
+        onConfirm: null
+    });
+    const openConfirm = (title, message, onConfirm) => {
+        setConfirmConfig({
+            open: true,
+            title,
+            message,
+            onConfirm
+        });
+    };
+    
+    const closeConfirm = () => {
+        setConfirmConfig(prev => ({ ...prev, open: false, onConfirm: null }));
+    };
+        
+    
+    // --- KLASÖR & FİLTRELEME STATE'LERİ ---
     const [rows, setRows] = useState([]);
+    const [folders, setFolders] = useState([]);
+    const [selectedFolderId, setSelectedFolderId] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    // Dosyaları Çek (Sadece Latest)
+    // --- YENİ EKLENEN STATE'LER: SEARCH & TYPE FILTER ---
+    const [searchQuery, setSearchQuery] = useState("");
+    const [filterType, setFilterType] = useState("ALL"); // ALL, PDF, CODE, IMAGE
+
+    // --- MOVE MODAL STATE'İ ---
+    const [showMoveModal, setShowMoveModal] = useState(false);
+    const [selectedArtifactForMove, setSelectedArtifactForMove] = useState(null);
+
     const fetchArtifacts = async () => {
         setIsLoading(true);
         try {
-            // Backend artık sadece isCurrentVersion=true olanları döndürüyor
             const { data } = await api.get("/api/store-artifacts/my-artifacts");
             const formattedRows = data.map(item => ({
                 id: item.id,
@@ -698,9 +885,65 @@ export default function UploadArtifacts() {
         setIsLoading(false);
     };
 
+    // --- KLASÖRLERİ ÇEK ---
+    const fetchFolders = async () => {
+        try {
+            const res = await api.get("/api/folders");
+            setFolders(res.data);
+        } catch (err) { console.error("Klasörler alınamadı", err); }
+    };
+
+    // --- KLASÖR SİLME FONKSİYONU ---
+    // --- KLASÖR SİLME FONKSİYONU ---
+const handleDeleteFolder = (folderId, folderName) => {
+    openConfirm(
+        "Delete Folder",
+        `Are you sure you want to delete the folder "${folderName}"?\nFiles inside will be moved to the main list.`,
+        async () => {
+            await api.delete(`/api/folders/${folderId}`);
+            if (selectedFolderId === folderId) {
+                setSelectedFolderId(null);
+            }
+            await fetchFolders();
+            await fetchArtifacts();
+        }
+    );
+};
+
+
     useEffect(() => {
         fetchArtifacts();
+        fetchFolders();
     }, []);
+
+    // --- FİLTRELEME MANTIĞI (GÜNCELLENDİ) ---
+    const filteredRows = useMemo(() => {
+        let result = rows;
+
+        // 1. Klasör Filtresi
+        if (selectedFolderId) {
+            result = result.filter(r => r.folder && r.folder.id === selectedFolderId);
+        }
+
+        // 2. Arama Filtresi (İsim veya Etiket)
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(r => 
+                r.filename.toLowerCase().includes(q) || 
+                (r.tags && r.tags.some(t => {
+                    const tName = typeof t === 'string' ? t : t.name;
+                    return tName.toLowerCase().includes(q);
+                }))
+            );
+        }
+
+        // 3. Tip Filtresi
+        if (filterType !== "ALL") {
+            result = result.filter(r => getFileTypeCategory(r.mimeType) === filterType);
+        }
+
+        return result;
+    }, [rows, selectedFolderId, searchQuery, filterType]);
 
     const createFolderPrompt = async () => {
         const folderName = prompt("Enter new folder name:");
@@ -708,6 +951,7 @@ export default function UploadArtifacts() {
             try {
                 await api.post("/api/folders", { name: folderName });
                 alert(`Folder "${folderName}" created successfully!`);
+                fetchFolders();
             } catch (err) {
                 alert("Failed to create folder: " + (err.response?.data?.error || err.message));
             }
@@ -715,7 +959,6 @@ export default function UploadArtifacts() {
     };
 
     const onUploaded = () => {
-        // Yeni yükleme yapıldığında listeyi yenile (Eski versiyon arşivlendi, yeni versiyon geldi)
         fetchArtifacts();
     };
 
@@ -724,13 +967,10 @@ export default function UploadArtifacts() {
         setDrawerOpen(true); 
     };
 
-    // --- MAKE CURRENT FONKSİYONU ---
     const handleMakeCurrent = async (versionItem) => {
         if (!window.confirm(`Are you sure you want to make version v${versionItem.versionNumber} the current version?`)) return;
-        
         try {
             await api.put(`/api/store-artifacts/${versionItem.id}/make-current`);
-            // İşlem başarılı olunca Drawer kapanır ve ana liste yenilenir.
             setDrawerOpen(false);
             fetchArtifacts();
         } catch (err) {
@@ -738,60 +978,232 @@ export default function UploadArtifacts() {
         }
     };
 
-    const doDelete = async (item) => {
-        if (!window.confirm(`Delete "${item.filename}" (This Version)?`)) return;
-        try {
-            await api.delete(`/api/store-artifacts/${item.id}`);
-            // Silindikten sonra listeyi yenile (Eğer current silindiyse yenisi current olabilir veya liste boşalır)
-            fetchArtifacts();
-        }
-        catch (err) { alert("Silinemedi: " + err.message); }
+    const doDelete = (item) => {
+        openConfirm(
+            "Delete Artifact",
+            `Delete "${item.filename}" (this version only)?`,
+            async () => {
+                await api.delete(`/api/store-artifacts/${item.id}`);
+                await fetchArtifacts();
+            }
+        );
     };
-
+    
     const openTagEdit = (item) => {
         setSelectedArtifactForTagEdit(item);
         setShowTagEdit(true);
     };
 
     const onTagsUpdated = () => {
-        // Tag'ler güncellendikten sonra listeyi yenile
+        fetchArtifacts();
+    };
+
+    const openMoveModal = (item) => {
+        setSelectedArtifactForMove(item);
+        setShowMoveModal(true);
+    };
+
+    const onMoved = () => {
         fetchArtifacts();
     };
 
     return (
         <div style={pageWrap}>
             <div style={container}>
-                <div style={{ ...hStack(12, "space-between") }}>
-                    <div style={{ fontSize: 28, fontWeight: 600, color: T.text }}>Dashboard</div>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24, marginTop: 24 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
+                    
+                    {/* --- SOL KOLON (DOSYA LİSTESİ) --- */}
                     <div>
                         <div style={card(true)}>
-                            <div style={cardHeader}><div style={{ color: T.text, fontSize: 14 }}>All artifacts</div></div>
+                            <div style={cardHeader}>
+                                {/* Başlık Dinamik + Arama */}
+                                <div style={{ color: T.text, fontSize: 14 }}>
+                                    {selectedFolderId 
+                                        ? `Folder: ${folders.find(f => f.id === selectedFolderId)?.name || 'Unknown'}` 
+                                        : 'All Artifacts'}
+                                </div>
+                            </div>
+                            
+                            {/* --- ARAMA VE FİLTRE BAR --- */}
+                            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.stroke}`, display: "flex", gap: 12, alignItems: 'center' }}>
+                                <div style={{ position: "relative", flex: 1 }}>
+                                    <Search size={14} color={T.muted} style={{ position: "absolute", left: 10, top: "38%", transform: "translateY(-50%)", outline: "none", boxShadow: "none" }} />
+                                    <input 
+                                        placeholder="Search by name or tag..." 
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        style={{ ...inputBase, width: "100%", padding: "8px 10px 8px 32px", background: T.panelSoft, borderRadius: 8, border: `1px solid ${T.stroke}` }} 
+                                    />
+                                    {/* X butonu kaldırıldı */}
+                                </div>
+                                <div style={{ display: "flex", gap: 4 }}>
+                                    {["ALL", "CODE", "PDF", "IMAGE"].map(type => (
+                                        <button
+                                            key={type}
+                                            onClick={() => setFilterType(type)}
+                                            style={{
+                                                background: filterType === type ? T.brand : "transparent",
+                                                color: filterType === type ? "#fff" : T.muted,
+                                                border: `1px solid ${filterType === type ? T.brand : T.stroke}`,
+                                                borderRadius: 6,
+                                                padding: "6px 10px",
+                                                fontSize: 11,
+                                                cursor: "pointer",
+                                                fontWeight: 500,
+                                                outline: "none",
+                                                boxShadow: "none"
+                                            
+                                            }}
+                                        >
+                                            {type}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            {/* ------------------------------------------- */}
+
                             <div style={cardBody}>
-                                <div style={{ display: "grid", gridTemplateColumns: "6fr 3fr 3fr", padding: "10px 16px", fontSize: 12, color: T.muted, borderBottom: `1px solid ${T.stroke}` }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "6fr 3fr 4fr", padding: "10px 16px", fontSize: 12, color: T.muted, borderBottom: `1px solid ${T.stroke}` }}>
                                     <div>Name</div><div>Tags</div><div style={{ textAlign: "right" }}>Actions</div>
                                 </div>
-                                {isLoading ? <div style={{ padding: 16, color: T.muted }}>Loading...</div> : rows.map(r => <ArtifactRow key={r.id} item={r} onClickVersions={openVersions} onDelete={doDelete} onEditTags={openTagEdit} />)}
+                                {isLoading ? (
+                                    <div style={{ padding: 16, color: T.muted }}>Loading...</div>
+                                ) : filteredRows.length === 0 ? (
+                                    <div style={{ padding: 24, textAlign: 'center', color: T.muted }}>
+                                        {searchQuery ? "No matches found." : (selectedFolderId ? "This folder is empty." : "No artifacts found.")}
+                                    </div>
+                                ) : (
+                                    filteredRows.map(r => (
+                                        <ArtifactRow 
+                                            key={r.id} 
+                                            item={r} 
+                                            onClickVersions={openVersions} 
+                                            onDelete={doDelete} 
+                                            onEditTags={openTagEdit}
+                                            onMove={openMoveModal} 
+                                        />
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>
+
+                    {/* --- SAĞ KOLON (KLASÖRLER VE QUICK ACTIONS) --- */}
                     <div style={vStack(24)}>
+
+                        {/* --- QUICK ACTIONS (ÜST) --- */}
                         <div style={card(true)}>
                             <div style={cardHeader}>
                                 <div style={{ color: T.text, fontSize: 14 }}>Quick actions</div>
-                                <Button variant="ghost" icon={SlidersHorizontal}>More</Button>
+                                {/* Filter (More) butonu kaldırıldı */}
                             </div>
                             <div style={cardBody}>
                                 <div style={{ ...hStack(8), flexWrap: "wrap" }}>
                                     <Button variant="subtle" icon={Upload} onClick={() => setShowWizard(true)}>Upload file</Button>
                                     <Button variant="subtle" icon={UploadCloud} onClick={() => setShowBulkUpload(true)}>Bulk Upload</Button>
                                     <Button variant="subtle" icon={FileJson} onClick={() => setShowBulkImport(true)}>Bulk Import</Button>
-                                    <Button variant="subtle" icon={Tag} onClick={() => alert("Use upload wizard to add tags.")}>Tag</Button>
+                                    {/* Tag butonu kaldırıldı */}
                                     <Button variant="subtle" icon={FolderPlus} onClick={createFolderPrompt}>New folder</Button>
                                 </div>
                             </div>
                         </div>
+                        {/* ------------------------------------------- */}
+                        
+                        {/* --- KLASÖR LİSTESİ KARTI (ALT) --- */}
+                        <div style={card(true)}>
+                            <div style={cardHeader}>
+                                <div style={{ color: T.text, fontSize: 14 }}>Folders</div>
+                                {/* Refresh butonu kaldırıldı */}
+                            </div>
+                            <div style={cardBody}>
+                                <div style={vStack(8)}>
+                                    {/* "Tüm Dosyalar" Seçeneği */}
+                                    <div 
+                                        onClick={() => setSelectedFolderId(null)}
+                                        style={{
+                                            padding: "8px 12px", 
+                                            borderRadius: 8, 
+                                            cursor: "pointer",
+                                            background: selectedFolderId === null ? T.brand : "transparent",
+                                            color: selectedFolderId === null ? "#fff" : T.text,
+                                            display: "flex", alignItems: "center", gap: 8, fontSize: 13,
+                                            border: selectedFolderId === null ? 'none' : `1px solid ${T.stroke}`
+                                        }}
+                                    >
+                                        <Layers size={14} /> All Artifacts
+                                    </div>
+
+                                    {/* Klasörler Listesi */}
+                                    {/* Klasörler Listesi */}
+                                    {folders.map(f => (
+                                    <div
+                                        key={f.id}
+                                        onClick={() => setSelectedFolderId(f.id)}
+                                        onMouseEnter={() => setHoveredFolderId(f.id)}
+                                        onMouseLeave={() => setHoveredFolderId(null)}
+                                        style={{
+                                        padding: "8px 12px",
+                                        borderRadius: 8,
+                                        cursor: "pointer",
+                                        background: selectedFolderId === f.id ? T.brand : "transparent",
+                                        color: selectedFolderId === f.id ? "#fff" : T.muted,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        fontSize: 13,
+                                        border: selectedFolderId === f.id ? "none" : `1px solid ${T.stroke}`
+                                        }}
+                                    >
+                                        {/* Sol taraf: ikon + isim */}
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                                        <Folder size={14} />
+                                        {f.name}
+                                        </div>
+
+                                        {/* Sağ taraf: sadece hover’da görünen trash */}
+                                        <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteFolder(f.id, f.name);
+                                        }}
+                                        style={{
+                                            background: "transparent",
+                                            border: "none",
+                                            cursor: "pointer",
+                                            padding: 4,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "flex-end",
+
+                                            // ✨ Hover görünürlüğü
+                                            opacity: hoveredFolderId === f.id ? 1 : 0,
+                                            pointerEvents: hoveredFolderId === f.id ? "auto" : "none",
+                                            transition: "opacity 0.2s ease",
+
+                                            // 🔵 Mavi outline’ı kapat
+                                            outline: "none",
+                                            boxShadow: "none",
+
+                                            color: selectedFolderId === f.id ? "#fff" : "#EF4444"
+                                        }}
+                                        title="Delete Folder"
+                                        >
+                                        <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                    ))}
+
+
+                                    
+                                    {folders.length === 0 && (
+                                        <div style={{color: T.muted, fontSize: 12, padding: 8, fontStyle: 'italic'}}>
+                                            No folders created.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                        {/* ------------------------------------------- */}
+
                     </div>
                 </div>
             </div>
@@ -800,16 +1212,106 @@ export default function UploadArtifacts() {
             <BulkImportModal open={showBulkImport} onClose={() => setShowBulkImport(false)} onUploaded={onUploaded} />
             <TagEditModal open={showTagEdit} onClose={() => setShowTagEdit(false)} artifact={selectedArtifactForTagEdit} onTagsUpdated={onTagsUpdated} />
 
-            {/* DRAWER GÜNCELLENDİ */}
+            <MoveArtifactModal 
+                open={showMoveModal} 
+                onClose={() => setShowMoveModal(false)} 
+                artifact={selectedArtifactForMove} 
+                folders={folders} 
+                onMoved={onMoved} 
+            />
+
             <VersionsDrawer
                 open={drawerOpen}
                 onClose={() => setDrawerOpen(false)}
                 filename={drawerFilename}
                 onMakeCurrent={handleMakeCurrent}
             />
+            <ConfirmModal
+                open={confirmConfig.open}
+                title={confirmConfig.title}
+                message={confirmConfig.message}
+                onCancel={closeConfirm}
+                onConfirm={confirmConfig.onConfirm}
+            />
         </div>
     );
 }
+
+
+/* --------- GENERIC CONFIRM MODAL --------- */
+function ConfirmModal({ open, title, message, onCancel, onConfirm }) {
+    const [loading, setLoading] = useState(false);
+
+    const handleConfirmClick = async () => {
+        if (!onConfirm) {
+            onCancel();
+            return;
+        }
+        setLoading(true);
+        try {
+            await onConfirm();
+        } finally {
+            setLoading(false);
+            onCancel();
+        }
+    };
+
+    return (
+        <AnimatePresence>
+            {open && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    style={{
+                        position: "fixed",
+                        inset: 0,
+                        zIndex: 70,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "rgba(0,0,0,0.6)"
+                    }}
+                >
+                    <motion.div
+                        initial={{ y: 30, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: 20, opacity: 0 }}
+                        style={{
+                            width: 440,
+                            maxWidth: "95vw",
+                            borderRadius: 24,
+                            overflow: "hidden",
+                            ...card()
+                        }}
+                    >
+                       <div style={cardHeader}>
+                        <div style={{ color: T.text, fontWeight: 600, fontSize: 15 }}>
+                            {title || "Are you sure?"}
+                        </div>
+                        {/* X ikonu kaldırıldı, alttaki Cancel ile kapanıyor */}
+                    </div>
+
+                        <div style={{ padding: 20, display: "grid", gap: 16 }}>
+                            <div style={{ color: T.muted, fontSize: 14, whiteSpace: "pre-line" }}>
+                                {message}
+                            </div>
+                            <div style={{ ...hStack(8, "flex-end") }}>
+                                <Button variant="ghost" onClick={onCancel}>
+                                    Cancel
+                                </Button>
+                                <Button onClick={handleConfirmClick}>
+                                    {loading ? "Working..." : "Confirm"}
+                                </Button>
+                            </div>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
 
 function toSize(n) {
     if (n == null) return "—";
@@ -817,3 +1319,4 @@ function toSize(n) {
     if (n >= MB) return (n / MB).toFixed(1) + "MB";
     return Math.round(n / KB) + "KB";
 }
+

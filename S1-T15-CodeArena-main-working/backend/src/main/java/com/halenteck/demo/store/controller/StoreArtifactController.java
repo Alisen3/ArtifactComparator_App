@@ -36,42 +36,32 @@ public class StoreArtifactController {
         this.tagRepo = tagRepo;
     }
 
-    // --- 1. UPLOAD (YÜKLEME) - Versiyonlama Destekli ---
+    // --- 1. UPLOAD (YÜKLEME) ---
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> upload(@RequestParam("file") MultipartFile file,
                                     @RequestParam(value = "folderId", required = false) Long folderId,
                                     @RequestParam(value = "tags", required = false) List<String> tags,
                                     Authentication authentication) {
         try {
-            // Yetki Kontrolü
             if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Yetkisiz erişim."));
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Yetkisiz erişim."));
             }
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             Long ownerId = userDetails.getId();
 
-            // 1. Hash Hesapla (Duplicate İçeriği Kontrol Et)
             String sha256 = sha256Hex(file.getBytes());
             if (artifactRepo.existsByOwnerIdAndSha256Hash(ownerId, sha256)) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(Map.of("duplicate", true, "message", "Bu içerikte bir dosya zaten yüklü."));
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("duplicate", true, "message", "Bu içerikte bir dosya zaten yüklü."));
             }
 
-            // 2. VERSİYONLAMA MANTIĞI
-            // Aynı isimdeki eski dosyaları bul
             List<StoreArtifactEntity> existingVersions = artifactRepo.findByOwnerIdAndFilenameOrderByVersionNumberDesc(ownerId, file.getOriginalFilename());
-            
-            // Eski versiyonların "current" durumunu false yap (Arşivle)
             for (StoreArtifactEntity oldArtifact : existingVersions) {
                 oldArtifact.setIsCurrentVersion(false);
                 artifactRepo.save(oldArtifact);
             }
 
-            // Yeni versiyon numarasını belirle (En yüksek + 1, yoksa 1)
             int nextVersion = existingVersions.isEmpty() ? 1 : existingVersions.get(0).getVersionNumber() + 1;
 
-            // 3. Yeni Artifact Nesnesini Hazırla
             StoreArtifactEntity artifact = new StoreArtifactEntity();
             artifact.setOwnerId(ownerId);
             artifact.setFilename(file.getOriginalFilename());
@@ -79,18 +69,12 @@ public class StoreArtifactController {
             artifact.setSizeBytes(file.getSize());
             artifact.setSha256Hash(sha256);
             artifact.setIsActive(true);
-            
-            // Versiyon Bilgileri
             artifact.setVersionNumber(nextVersion);
-            artifact.setIsCurrentVersion(true); // Yeni yüklenen her zaman günceldir
-
+            artifact.setIsCurrentVersion(true);
             artifact.setCreatedAt(Instant.now());
             artifact.setUpdatedAt(Instant.now());
-            
-            // Dosya verisini set et (LOB/BYTEA)
             artifact.setData(file.getBytes());
 
-            // 4. Klasörleme (Folder)
             if (folderId != null) {
                 Optional<FolderEntity> folderOpt = folderRepo.findById(folderId);
                 if (folderOpt.isPresent() && folderOpt.get().getOwnerId().equals(ownerId)) {
@@ -98,32 +82,28 @@ public class StoreArtifactController {
                 }
             }
 
-            // 5. Etiketleme (Tags)
             if (tags != null && !tags.isEmpty()) {
                 Set<TagEntity> tagEntities = new HashSet<>();
                 for (String tagName : tags) {
                     String cleanTag = tagName.trim();
                     if (!cleanTag.isEmpty()) {
-                        TagEntity tag = tagRepo.findByName(cleanTag)
-                                .orElseGet(() -> {
-                                    TagEntity newTag = new TagEntity();
-                                    newTag.setName(cleanTag);
-                                    return tagRepo.save(newTag);
-                                });
+                        TagEntity tag = tagRepo.findByName(cleanTag).orElseGet(() -> {
+                            TagEntity newTag = new TagEntity();
+                            newTag.setName(cleanTag);
+                            return tagRepo.save(newTag);
+                        });
                         tagEntities.add(tag);
                     }
                 }
                 artifact.setTags(tagEntities);
             }
 
-            // 6. Önizleme (Preview) Oluşturma
             String mimeType = file.getContentType();
             if (mimeType != null) {
                 boolean isText = mimeType.startsWith("text/") || 
                                  (mimeType.contains("json") && !mimeType.contains("openxmlformats")) ||
                                  (mimeType.contains("xml") && !mimeType.contains("openxmlformats")) ||
                                  mimeType.contains("javascript");
-
                 if (isText) {
                     String content = new String(file.getBytes(), StandardCharsets.UTF_8);
                     if (!content.contains("\u0000")) {
@@ -133,196 +113,142 @@ public class StoreArtifactController {
                 }
             }
 
-            // 7. Kaydet
             StoreArtifactEntity savedArtifact = artifactRepo.save(artifact);
-
             return ResponseEntity.status(HttpStatus.CREATED).body(savedArtifact);
 
         } catch (Exception ex) {
             ex.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", ex.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getMessage()));
         }
     }
 
-    // --- 2. LISTELEME (Sadece GÜNCEL Versiyonlar) ---
+    // --- 2. LISTELEME ---
     @GetMapping("/my-artifacts")
     public ResponseEntity<?> getMyArtifacts(Authentication authentication) {
         try {
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             Long ownerId = userDetails.getId();
-
-            // Sadece isCurrentVersion = true olanları getir
             List<StoreArtifactEntity> artifacts = artifactRepo.findByOwnerIdAndIsCurrentVersionTrueOrderByCreatedAtDesc(ownerId);
             return ResponseEntity.ok(artifacts);
-
         } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", ex.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getMessage()));
         }
     }
 
-    // --- 3. HISTORY (Bir dosyanın tüm geçmişi) ---
+    // --- 3. HISTORY ---
     @GetMapping("/history/{filename}")
     public ResponseEntity<?> getArtifactHistory(@PathVariable String filename, Authentication authentication) {
         try {
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             Long ownerId = userDetails.getId();
-
-            // İsmine göre tüm versiyonları getir
             List<StoreArtifactEntity> history = artifactRepo.findByOwnerIdAndFilenameOrderByVersionNumberDesc(ownerId, filename);
             return ResponseEntity.ok(history);
-
         } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", ex.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getMessage()));
         }
     }
 
-    // --- 4. MAKE CURRENT (Eski bir versiyonu güncel yap) ---
+    // --- 4. MAKE CURRENT ---
     @PutMapping("/{id}/make-current")
     public ResponseEntity<?> makeVersionCurrent(@PathVariable Long id, Authentication authentication) {
         try {
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             Long ownerId = userDetails.getId();
 
-            // Hedef artifact'ı bul
-            StoreArtifactEntity targetArtifact = artifactRepo.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Artifact not found"));
-
+            StoreArtifactEntity targetArtifact = artifactRepo.findById(id).orElseThrow(() -> new RuntimeException("Artifact not found"));
             if (!targetArtifact.getOwnerId().equals(ownerId)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Bu dosya size ait değil."));
             }
 
-            // Bu dosya adına sahip TÜM versiyonları bul
             List<StoreArtifactEntity> allVersions = artifactRepo.findByOwnerIdAndFilenameOrderByVersionNumberDesc(ownerId, targetArtifact.getFilename());
-
-            // Hepsini false yap
             for (StoreArtifactEntity artifact : allVersions) {
                 artifact.setIsCurrentVersion(false);
                 artifactRepo.save(artifact);
             }
 
-            // Hedeflenen versiyonu true yap
             targetArtifact.setIsCurrentVersion(true);
             artifactRepo.save(targetArtifact);
 
             return ResponseEntity.ok(Map.of("message", "Version " + targetArtifact.getVersionNumber() + " is now current."));
-
         } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", ex.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getMessage()));
         }
     }
 
-    // --- 5. DOWNLOAD (İNDİRME) ---
+    // --- 5. DOWNLOAD ---
     @GetMapping("/download/{id}")
     public ResponseEntity<?> downloadArtifact(@PathVariable Long id) {
         try {
-            StoreArtifactEntity artifact = artifactRepo.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Artifact bulunamadı!"));
-
+            StoreArtifactEntity artifact = artifactRepo.findById(id).orElseThrow(() -> new RuntimeException("Artifact bulunamadı!"));
             byte[] fileContent = artifact.getData();
             if (fileContent == null || fileContent.length == 0) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Map.of("error", "Dosya içeriği boş."));
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Dosya içeriği boş."));
             }
-
             return ResponseEntity.ok()
                     .contentType(MediaType.parseMediaType(artifact.getMimeType()))
-                    .header(HttpHeaders.CONTENT_DISPOSITION, 
-                            "inline; filename=\"" + artifact.getFilename() + "\"")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + artifact.getFilename() + "\"")
                     .body(fileContent);
-
         } catch (Exception ex) {
-            ex.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", ex.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getMessage()));
         }
     }
 
-    // --- 6. DELETE (SİLME) ---
+    // --- 6. DELETE ---
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteArtifact(@PathVariable Long id, Authentication authentication) {
         try {
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             Long ownerId = userDetails.getId();
-
             artifactRepo.deleteByIdAndOwnerId(id, ownerId);
             return ResponseEntity.ok(Map.of("deleted", true, "id", id));
-
         } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", ex.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getMessage()));
         }
     }
 
-    // --- 7. UPDATE TAGS (Artifact'ın etiketlerini güncelleme) ---
+    // --- 7. UPDATE TAGS ---
     @PatchMapping("/{id}/tags")
-    public ResponseEntity<?> updateArtifactTags(@PathVariable Long id,
-                                                 @RequestBody Map<String, Object> requestBody,
-                                                 Authentication authentication) {
+    public ResponseEntity<?> updateArtifactTags(@PathVariable Long id, @RequestBody Map<String, Object> requestBody, Authentication authentication) {
         try {
             if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Yetkisiz erişim."));
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Yetkisiz erişim."));
             }
-
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             Long ownerId = userDetails.getId();
 
-            // Artifact'ı bul
-            StoreArtifactEntity artifact = artifactRepo.findById(id)
-                    .orElseThrow(() -> new RuntimeException("Artifact not found"));
-
-            // Yetki kontrolü
+            StoreArtifactEntity artifact = artifactRepo.findById(id).orElseThrow(() -> new RuntimeException("Artifact not found"));
             if (!artifact.getOwnerId().equals(ownerId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("error", "Bu dosya size ait değil."));
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Bu dosya size ait değil."));
             }
 
-            // Yeni tag listesini al
             @SuppressWarnings("unchecked")
             List<String> tagNames = (List<String>) requestBody.get("tags");
+            if (tagNames == null) return ResponseEntity.badRequest().body(Map.of("error", "Tags listesi gerekli."));
 
-            if (tagNames == null) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Tags listesi gerekli."));
-            }
-
-            // Mevcut tag'leri temizle ve yeni tag'leri ekle
             Set<TagEntity> newTags = new HashSet<>();
             for (String tagName : tagNames) {
                 String cleanTag = tagName.trim();
                 if (!cleanTag.isEmpty()) {
-                    TagEntity tag = tagRepo.findByName(cleanTag)
-                            .orElseGet(() -> {
-                                TagEntity newTag = new TagEntity();
-                                newTag.setName(cleanTag);
-                                return tagRepo.save(newTag);
-                            });
+                    TagEntity tag = tagRepo.findByName(cleanTag).orElseGet(() -> {
+                        TagEntity newTag = new TagEntity();
+                        newTag.setName(cleanTag);
+                        return tagRepo.save(newTag);
+                    });
                     newTags.add(tag);
                 }
             }
-
             artifact.setTags(newTags);
             artifact.setUpdatedAt(Instant.now());
             StoreArtifactEntity updatedArtifact = artifactRepo.save(artifact);
 
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Tags başarıyla güncellendi.",
-                "artifact", updatedArtifact
-            ));
+            return ResponseEntity.ok(Map.of("success", true, "message", "Tags başarıyla güncellendi.", "artifact", updatedArtifact));
 
         } catch (Exception ex) {
-            ex.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", ex.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getMessage()));
         }
     }
 
-    // --- 8. BULK UPLOAD (Birden fazla dosya yükleme) ---
+    // --- 8. BULK UPLOAD ---
     @PostMapping(value = "/bulk-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> bulkUpload(@RequestParam("files") MultipartFile[] files,
                                         @RequestParam(value = "folderId", required = false) Long folderId,
@@ -462,7 +388,7 @@ public class StoreArtifactController {
         }
     }
 
-    // --- 9. BULK IMPORT (CSV/JSON'dan artifact bilgilerini import etme) ---
+    // --- 9. BULK IMPORT ---
     @PostMapping("/bulk-import")
     public ResponseEntity<?> bulkImport(@RequestBody Map<String, Object> importData,
                                         Authentication authentication) {
@@ -626,7 +552,62 @@ public class StoreArtifactController {
         }
     }
 
-    // --- YARDIMCI METODLAR ---
+    // --- 10. MOVE ARTIFACT (FIXLENDİ) ---
+    @PutMapping("/{id}/move")
+    public ResponseEntity<?> moveArtifact(@PathVariable Long id,
+                                          @RequestBody Map<String, Object> requestBody, // Object alarak esneklik sağlandı
+                                          Authentication authentication) {
+        try {
+            if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Yetkisiz erişim."));
+            }
+            CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+            Long ownerId = userDetails.getId();
+
+            StoreArtifactEntity artifact = artifactRepo.findById(id)
+                    .orElseThrow(() -> new RuntimeException("Artifact bulunamadı."));
+
+            if (!artifact.getOwnerId().equals(ownerId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Bu dosya size ait değil."));
+            }
+
+            // GÜVENLİ PARSE İŞLEMİ (Fix burada)
+            Object folderIdObj = requestBody.get("folderId");
+            Long folderId = null;
+            
+            if (folderIdObj != null) {
+                String val = folderIdObj.toString();
+                if (!val.isEmpty() && !val.equals("null")) {
+                    try {
+                        folderId = Long.valueOf(val);
+                    } catch (NumberFormatException e) {
+                        // Sayı değilse null kabul et
+                    }
+                }
+            }
+
+            if (folderId != null) {
+                FolderEntity folder = folderRepo.findById(folderId)
+                        .orElseThrow(() -> new RuntimeException("Hedef klasör bulunamadı."));
+                
+                if (!folder.getOwnerId().equals(ownerId)) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Hedef klasör size ait değil."));
+                }
+                artifact.setFolder(folder);
+            } else {
+                artifact.setFolder(null); // Klasörden çıkar
+            }
+
+            artifact.setUpdatedAt(Instant.now());
+            StoreArtifactEntity updatedArtifact = artifactRepo.save(artifact);
+
+            return ResponseEntity.ok(updatedArtifact);
+
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getMessage()));
+        }
+    }
+
     private static String sha256Hex(byte[] data) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         byte[] digest = md.digest(data);
