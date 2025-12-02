@@ -574,14 +574,19 @@ public class StoreArtifactController {
             // GÜVENLİ PARSE İŞLEMİ (Fix burada)
             Object folderIdObj = requestBody.get("folderId");
             Long folderId = null;
-            
+
             if (folderIdObj != null) {
-                String val = folderIdObj.toString();
-                if (!val.isEmpty() && !val.equals("null")) {
-                    try {
-                        folderId = Long.valueOf(val);
-                    } catch (NumberFormatException e) {
-                        // Sayı değilse null kabul et
+                if (folderIdObj instanceof Number) {
+                    folderId = ((Number) folderIdObj).longValue();
+                } else {
+                    String val = folderIdObj.toString();
+                    if (!val.isEmpty() && !val.equals("null")) {
+                        try {
+                            folderId = Long.valueOf(val);
+                        } catch (NumberFormatException e) {
+                            return ResponseEntity.badRequest()
+                                .body(Map.of("error", "Geçersiz klasör ID'si: " + val));
+                        }
                     }
                 }
             }

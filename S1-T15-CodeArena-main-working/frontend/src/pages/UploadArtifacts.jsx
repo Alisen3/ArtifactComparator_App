@@ -147,11 +147,11 @@ function MoveArtifactModal({ open, onClose, artifact, folders, onMoved }) {
         if (!artifact) return;
         setLoading(true);
         try {
-            const payload = { 
-                folderId: selectedFolderId === "" ? null : selectedFolderId 
-            };
+            // Convert selectedFolderId to number if not empty, otherwise null
+            const folderId = selectedFolderId === "" ? null : parseInt(selectedFolderId, 10);
+            const payload = { folderId };
             await api.put(`/api/store-artifacts/${artifact.id}/move`, payload);
-            onMoved(); 
+            onMoved();
             onClose();
         } catch (err) {
             alert("Failed to move artifact: " + (err.response?.data?.error || err.message));
