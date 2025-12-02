@@ -260,7 +260,7 @@ function UploadWizard({ open, onClose, onUploaded }) {
     return (
         <AnimatePresence>
             {open && (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" }}>
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)" , transition: { duration: 0.8 }}}>
                     <motion.div initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} style={{ width: 980, maxWidth: "95vw", borderRadius: 24, overflow: "hidden", ...card() }}>
                         <div style={cardHeader}>
                             <div style={{ color: T.text, fontWeight: 600 }}>Upload Artifact</div>
